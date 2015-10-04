@@ -29,9 +29,9 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * Contains the main entrance/functionality of the product. To set a custom configuration, the
- * implementer must make a call to OcPlatform.Configure before the first usage of a function in this
- * class.
+ * This class contains the main entrance/functionality of the product. To set a custom
+ * configuration, the implementer must make a call to OcPlatform.Configure before the first usage
+ * of a method in this class.
  */
 public final class OcPlatform {
 
@@ -63,12 +63,10 @@ public final class OcPlatform {
      */
     public static final String GROUP_INTERFACE = "oic.mi.grp";
 
-    public static final String WELL_KNOWN_QUERY = "224.0.1.187:5683/oic/res";
-    public static final String MULTICAST_PREFIX = "224.0.1.187:5683";
-    public static final String MULTICAST_IP = "224.0.1.187";
-    public static final int MULTICAST_PORT = 5683;
+    public static final String WELL_KNOWN_QUERY = "/oic/res";
+    public static final String WELL_KNOWN_DEVICE_QUERY = "/oic/d";
+    public static final String WELL_KNOWN_PLATFORM_QUERY = "/oic/p";
     public static final int DEFAULT_PRESENCE_TTL = 60;
-    public static final String DEVICE_URI = "/oic/d";
     public static final String PRESENCE_URI = "/oic/ad";
 
     private static volatile boolean sIsPlatformInitialized = false;
@@ -78,7 +76,9 @@ public final class OcPlatform {
 
     /**
      * API for setting the configuration of the OcPlatform.
+     * <p>
      * Note: Any calls made to this AFTER the first call to OcPlatform.Configure will have no affect
+     * </p>
      *
      * @param platformConfig platform configuration
      */
@@ -91,7 +91,8 @@ public final class OcPlatform {
                     platformConfig.getModeType().getValue(),
                     platformConfig.getIpAddress(),
                     platformConfig.getPort(),
-                    platformConfig.getQualityOfService().getValue()
+                    platformConfig.getQualityOfService().getValue(),
+                    platformConfig.getSvrDbPath()
             );
 
             sIsPlatformInitialized = true;
@@ -102,13 +103,17 @@ public final class OcPlatform {
                                          int modeType,
                                          String ipAddress,
                                          int port,
-                                         int qualityOfService);
+                                         int qualityOfService,
+                                         String dbPath);
 
     /**
      * API for notifying base that resource's attributes have changed.
+     * <p>
+     * Note: This API is for server side only.
+     * </p>
      *
      * @param ocResourceHandle resource handle of the resource
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void notifyAllObservers(
             OcResourceHandle ocResourceHandle) throws OcException {
@@ -121,10 +126,13 @@ public final class OcPlatform {
 
     /**
      * API for notifying base that resource's attributes have changed.
+     * <p>
+     * Note: This API is for server side only.
+     * </p>
      *
      * @param ocResourceHandle resource handle of the resource
      * @param qualityOfService the quality of communication
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void notifyAllObservers(
             OcResourceHandle ocResourceHandle,
@@ -139,13 +147,16 @@ public final class OcPlatform {
 
     /**
      * API for notifying only specific clients that resource's attributes have changed.
+     * <p>
+     * Note: This API is for server side only.
+     * </p>
      *
      * @param ocResourceHandle    resource handle of the resource
      * @param ocObservationIdList These set of ids are ones which which will be notified upon
      *                            resource change.
      * @param ocResourceResponse  OcResourceResponse object used by app to fill the response for
      *                            this resource change
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void notifyListOfObservers(
             OcResourceHandle ocResourceHandle,
@@ -173,6 +184,9 @@ public final class OcPlatform {
 
     /**
      * API for notifying only specific clients that resource's attributes have changed.
+     * <p>
+     * Note: This API is for server side only.
+     * </p>
      *
      * @param ocResourceHandle    resource handle of the resource
      * @param ocObservationIdList These set of ids are ones which which will be notified upon
@@ -180,7 +194,7 @@ public final class OcPlatform {
      * @param ocResourceResponse  OcResourceResponse object used by app to fill the response for
      *                            this resource change
      * @param qualityOfService    the quality of communication
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void notifyListOfObservers(
             OcResourceHandle ocResourceHandle,
@@ -211,27 +225,37 @@ public final class OcPlatform {
             int qualityOfService) throws OcException;
 
     /**
-     * API for Service and Resource Discovery. NOTE: This API applies to client side only
+     * API for Service and Resource Discovery
+     * <p>
+     * Note: This API is for client side only.
+     * </p>
      *
-     * @param host                    Host IP Address of a service to direct resource discovery query.
+     * @param host                    Host Address of a service to direct resource discovery query.
      *                                If empty, performs multicast resource discovery query
      * @param resourceUri             name of the resource. If null or empty, performs search for all
      *                                resource names
-     * @param connectivityType        a type of connectivity indicating the interface. Example: IPV4,
-     *                                IPV6, ALL
+     * @param connectivityTypeSet     Set of types of connectivity. Example: IP
      * @param onResourceFoundListener Handles events, success states and failure states.
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void findResource(
             String host,
             String resourceUri,
-            OcConnectivityType connectivityType,
+            EnumSet<OcConnectivityType> connectivityTypeSet,
             OnResourceFoundListener onResourceFoundListener) throws OcException {
         OcPlatform.initCheck();
+
+        int connTypeInt = 0;
+
+        for (OcConnectivityType connType : OcConnectivityType.values()) {
+            if (connectivityTypeSet.contains(connType))
+                connTypeInt |= connType.getValue();
+        }
+
         OcPlatform.findResource0(
                 host,
                 resourceUri,
-                connectivityType.getValue(),
+                connTypeInt,
                 onResourceFoundListener
         );
     }
@@ -243,28 +267,38 @@ public final class OcPlatform {
             OnResourceFoundListener onResourceFoundListener) throws OcException;
 
     /**
-     * API for Service and Resource Discovery. NOTE: This API applies to client side only
+     * API for Service and Resource Discovery.
+     * <p>
+     * Note: This API is for client side only.
+     * </p>
      *
      * @param host                    Host IP Address of a service to direct resource discovery query.
      *                                If empty, performs multicast resource discovery query
      * @param resourceUri             name of the resource. If null or empty, performs search for all
      *                                resource names
-     * @param connectivityType        a type of connectivity indicating the interface. Example: IPV4,
-     *                                IPV6, ALL
+     * @param connectivityTypeSet     Set of types of connectivity. Example: IP
      * @param onResourceFoundListener Handles events, success states and failure states.
      * @param qualityOfService        the quality of communication
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void findResource(
             String host,
             String resourceUri,
-            OcConnectivityType connectivityType,
+            EnumSet<OcConnectivityType> connectivityTypeSet,
             OnResourceFoundListener onResourceFoundListener,
             QualityOfService qualityOfService) throws OcException {
         OcPlatform.initCheck();
+
+        int connTypeInt = 0;
+
+        for (OcConnectivityType connType : OcConnectivityType.values()) {
+            if (connectivityTypeSet.contains(connType))
+                connTypeInt |= connType.getValue();
+        }
+
         OcPlatform.findResource1(host,
                 resourceUri,
-                connectivityType.getValue(),
+                connTypeInt,
                 onResourceFoundListener,
                 qualityOfService.getValue()
         );
@@ -282,21 +316,26 @@ public final class OcPlatform {
      *
      * @param host                  Host IP Address. If null or empty, Multicast is performed.
      * @param deviceUri             Uri containing address to the virtual device
-     * @param connectivityType      a type of connectivity indicating the interface. Example: IPV4,
-     *                              IPV6, ALL
+     * @param connectivityTypeSet   Set of types of connectivity. Example: IP
      * @param onDeviceFoundListener Handles events, success states and failure states.
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void getDeviceInfo(
             String host,
             String deviceUri,
-            OcConnectivityType connectivityType,
+            EnumSet<OcConnectivityType> connectivityTypeSet,
             OnDeviceFoundListener onDeviceFoundListener) throws OcException {
         OcPlatform.initCheck();
+        int connTypeInt = 0;
+
+        for (OcConnectivityType connType : OcConnectivityType.values()) {
+            if (connectivityTypeSet.contains(connType))
+                connTypeInt |= connType.getValue();
+        }
         OcPlatform.getDeviceInfo0(
                 host,
                 deviceUri,
-                connectivityType.getValue(),
+                connTypeInt,
                 onDeviceFoundListener
         );
     }
@@ -312,23 +351,28 @@ public final class OcPlatform {
      *
      * @param host                  Host IP Address. If null or empty, Multicast is performed.
      * @param deviceUri             Uri containing address to the virtual device
-     * @param connectivityType      a type of connectivity indicating the interface. Example: IPV4,
-     *                              IPV6, ALL
+     * @param connectivityTypeSet   Set of types of connectivity. Example: IP
      * @param onDeviceFoundListener Handles events, success states and failure states.
      * @param qualityOfService      the quality of communication
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void getDeviceInfo(
             String host,
             String deviceUri,
-            OcConnectivityType connectivityType,
+            EnumSet<OcConnectivityType> connectivityTypeSet,
             OnDeviceFoundListener onDeviceFoundListener,
             QualityOfService qualityOfService) throws OcException {
         OcPlatform.initCheck();
+        int connTypeInt = 0;
+
+        for (OcConnectivityType connType : OcConnectivityType.values()) {
+            if (connectivityTypeSet.contains(connType))
+                connTypeInt |= connType.getValue();
+        }
         OcPlatform.getDeviceInfo1(
                 host,
                 deviceUri,
-                connectivityType.getValue(),
+                connTypeInt,
                 onDeviceFoundListener,
                 qualityOfService.getValue()
         );
@@ -344,24 +388,29 @@ public final class OcPlatform {
     /**
      * API for Platform Discovery
      *
-     * @param host                  Host IP Address. If null or empty, Multicast is performed.
-     * @param platformUri           Uri containing address to the platform
-     * @param connectivityType      a type of connectivity indicating the interface. Example: IPV4,
-     *                              IPV6, ALL
+     * @param host                    Host IP Address. If null or empty, Multicast is performed.
+     * @param platformUri             Uri containing address to the platform
+     * @param connectivityTypeSet     Set of types of connectivity. Example: IP
      * @param onPlatformFoundListener Handles events, success states and failure states.
-     * @throws OcException
+     * @throws OcException if failure
      */
 
     public static void getPlatformInfo(
             String host,
             String platformUri,
-            OcConnectivityType connectivityType,
+            EnumSet<OcConnectivityType> connectivityTypeSet,
             OnPlatformFoundListener onPlatformFoundListener) throws OcException {
         OcPlatform.initCheck();
+        int connTypeInt = 0;
+
+        for (OcConnectivityType connType : OcConnectivityType.values()) {
+            if (connectivityTypeSet.contains(connType))
+                connTypeInt |= connType.getValue();
+        }
         OcPlatform.getPlatformInfo0(
                 host,
                 platformUri,
-                connectivityType.getValue(),
+                connTypeInt,
                 onPlatformFoundListener
         );
     }
@@ -375,26 +424,31 @@ public final class OcPlatform {
     /**
      * API for Platform Discovery
      *
-     * @param host                  Host IP Address. If null or empty, Multicast is performed.
-     * @param platformUri           Uri containing address to the platform
-     * @param connectivityType      a type of connectivity indicating the interface. Example: IPV4,
-     *                              IPV6, ALL
+     * @param host                    Host IP Address. If null or empty, Multicast is performed.
+     * @param platformUri             Uri containing address to the platform
+     * @param connectivityTypeSet     Set of types of connectivity. Example: IP
      * @param onPlatformFoundListener Handles events, success states and failure states.
-     * @param qualityOfService      the quality of communication
-     * @throws OcException
+     * @param qualityOfService        the quality of communication
+     * @throws OcException if failure
      */
 
     public static void getPlatformInfo(
             String host,
             String platformUri,
-            OcConnectivityType connectivityType,
+            EnumSet<OcConnectivityType> connectivityTypeSet,
             OnPlatformFoundListener onPlatformFoundListener,
             QualityOfService qualityOfService) throws OcException {
         OcPlatform.initCheck();
+        int connTypeInt = 0;
+
+        for (OcConnectivityType connType : OcConnectivityType.values()) {
+            if (connectivityTypeSet.contains(connType))
+                connTypeInt |= connType.getValue();
+        }
         OcPlatform.getPlatformInfo1(
                 host,
                 platformUri,
-                connectivityType.getValue(),
+                connTypeInt,
                 onPlatformFoundListener,
                 qualityOfService.getValue()
         );
@@ -408,11 +462,14 @@ public final class OcPlatform {
             int qualityOfService) throws OcException;
 
     /**
-     * This API registers a resource with the server NOTE: This API applies to server side only.
+     * This API registers a resource with the server
+     * <P>
+     * Note: This API applies to server & client side.
+     * </P>
      *
      * @param ocResource The instance of OcResource with all data filled
      * @return resource handle
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static OcResourceHandle registerResource(
             OcResource ocResource) throws OcException {
@@ -425,14 +482,16 @@ public final class OcPlatform {
 
     /**
      * This API registers a resource with the server NOTE: This API applies to server side only.
-     *
+     * <P>
+     * Note: This API applies to server side only.
+     * </P>
      * @param resourceUri         The URI of the resource. Example: "a/light"
      * @param resourceTypeName    The resource type. Example: "light"
      * @param resourceInterface   The resource interface (whether it is collection etc).
      * @param entityHandler       entity handler.
      * @param resourcePropertySet indicates the property of the resource
      * @return resource handle
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static OcResourceHandle registerResource(
             String resourceUri,
@@ -467,7 +526,7 @@ public final class OcPlatform {
      * Register Device Info
      *
      * @param ocDeviceInfo object containing all the device specific information
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void registerDeviceInfo(
             OcDeviceInfo ocDeviceInfo) throws OcException {
@@ -479,19 +538,19 @@ public final class OcPlatform {
 
     private static native void registerDeviceInfo0(
             String deviceName
-            ) throws OcException;
+    ) throws OcException;
 
     /**
      * Register Platform Info
      *
      * @param ocPlatformInfo object containing all the platform specific information
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void registerPlatformInfo(
             OcPlatformInfo ocPlatformInfo) throws OcException {
         OcPlatform.initCheck();
         OcPlatform.registerPlatformInfo0(
-                ocPlatformInfo.getPlatformID(),
+                ocPlatformInfo.getPlatformId(),
                 ocPlatformInfo.getManufacturerName(),
                 ocPlatformInfo.getManufacturerUrl(),
                 ocPlatformInfo.getModelNumber(),
@@ -517,7 +576,7 @@ public final class OcPlatform {
      *
      * @param ocResourceHandle This is the resource handle which we which to unregister from the
      *                         server
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void unregisterResource(
             OcResourceHandle ocResourceHandle) throws OcException {
@@ -534,7 +593,7 @@ public final class OcPlatform {
      *
      * @param ocResourceCollectionHandle handle to the collection resource
      * @param ocResourceHandle           handle to resource to be added to the collection resource
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void bindResource(
             OcResourceHandle ocResourceCollectionHandle,
@@ -553,7 +612,7 @@ public final class OcPlatform {
      * @param ocResourceCollectionHandle handle to the collection resource
      * @param ocResourceHandleList       reference to list of resource handles to be added to the
      *                                   collection resource
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void bindResources(
             OcResourceHandle ocResourceCollectionHandle,
@@ -575,7 +634,7 @@ public final class OcPlatform {
      *
      * @param ocResourceCollectionHandle handle to the collection resource
      * @param ocResourceHandle           resource handle to be unbound from the collection resource
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void unbindResource(
             OcResourceHandle ocResourceCollectionHandle,
@@ -594,7 +653,7 @@ public final class OcPlatform {
      * @param ocResourceCollectionHandle Handle to the collection resource
      * @param ocResourceHandleList       List of resource handles to be unbound from the collection
      *                                   resource
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void unbindResources(
             OcResourceHandle ocResourceCollectionHandle,
@@ -616,7 +675,7 @@ public final class OcPlatform {
      *
      * @param ocResourceHandle handle to the resource
      * @param resourceTypeName new typename to bind to the resource
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void bindTypeToResource(
             OcResourceHandle ocResourceHandle,
@@ -634,7 +693,7 @@ public final class OcPlatform {
      *
      * @param ocResourceHandle      handle to the resource
      * @param resourceInterfaceName new interface to bind to the resource
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void bindInterfaceToResource(
             OcResourceHandle ocResourceHandle,
@@ -651,7 +710,7 @@ public final class OcPlatform {
      * Start Presence announcements.
      *
      * @param ttl time to live in seconds
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void startPresence(int ttl) throws OcException {
         OcPlatform.initCheck();
@@ -663,7 +722,7 @@ public final class OcPlatform {
     /**
      * Stop Presence announcements.
      *
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void stopPresence() throws OcException {
         OcPlatform.initCheck();
@@ -676,22 +735,27 @@ public final class OcPlatform {
      * Subscribes to a server's presence change events. By making this subscription, every time a
      * server adds/removes/alters a resource, starts or is intentionally stopped
      *
-     * @param host               The IP address/addressable name of the server to subscribe to
-     * @param connectivityType   a type of connectivity indicating the interface. Example: IPV4,
-     *                           IPV6, ALL
-     * @param onPresenceListener listener that will receive notifications/subscription events
+     * @param host                The IP address/addressable name of the server to subscribe to
+     * @param connectivityTypeSet Set of types of connectivity. Example: IP
+     * @param onPresenceListener  listener that will receive notifications/subscription events
      * @return a handle object that can be used to identify this subscription request. It can be
      * used to unsubscribe from these events in the future
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static OcPresenceHandle subscribePresence(
             String host,
-            OcConnectivityType connectivityType,
+            EnumSet<OcConnectivityType> connectivityTypeSet,
             OnPresenceListener onPresenceListener) throws OcException {
         OcPlatform.initCheck();
+        int connTypeInt = 0;
+
+        for (OcConnectivityType connType : OcConnectivityType.values()) {
+            if (connectivityTypeSet.contains(connType))
+                connTypeInt |= connType.getValue();
+        }
         return OcPlatform.subscribePresence0(
                 host,
-                connectivityType.getValue(),
+                connTypeInt,
                 onPresenceListener
         );
     }
@@ -705,25 +769,30 @@ public final class OcPlatform {
      * Subscribes to a server's presence change events. By making this subscription, every time a
      * server adds/removes/alters a resource, starts or is intentionally stopped
      *
-     * @param host               The IP address/addressable name of the server to subscribe to
-     * @param resourceType       a resource type specified as a filter for subscription events.
-     * @param connectivityType   a type of connectivity indicating the interface. Example: IPV4,
-     *                           IPV6, ALL
-     * @param onPresenceListener listener that will receive notifications/subscription events
+     * @param host                The IP address/addressable name of the server to subscribe to
+     * @param resourceType        a resource type specified as a filter for subscription events.
+     * @param connectivityTypeSet Set of types of connectivity. Example: IP
+     * @param onPresenceListener  listener that will receive notifications/subscription events
      * @return a handle object that can be used to identify this subscription request. It can be
      * used to unsubscribe from these events in the future
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static OcPresenceHandle subscribePresence(
             String host,
             String resourceType,
-            OcConnectivityType connectivityType,
+            EnumSet<OcConnectivityType> connectivityTypeSet,
             OnPresenceListener onPresenceListener) throws OcException {
         OcPlatform.initCheck();
+        int connTypeInt = 0;
+
+        for (OcConnectivityType connType : OcConnectivityType.values()) {
+            if (connectivityTypeSet.contains(connType))
+                connTypeInt |= connType.getValue();
+        }
         return OcPlatform.subscribePresence1(
                 host,
                 resourceType,
-                connectivityType.getValue(),
+                connTypeInt,
                 onPresenceListener);
     }
 
@@ -740,7 +809,7 @@ public final class OcPlatform {
      *
      * @param ocPresenceHandle the handle object provided by the subscribePresence call that
      *                         identifies this subscription
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void unsubscribePresence(
             OcPresenceHandle ocPresenceHandle) throws OcException {
@@ -759,31 +828,36 @@ public final class OcPlatform {
      * Additionally, you can only create this object if OcPlatform was initialized to be a Client
      * or Client/Server.
      *
-     * @param host             a string containing a resolvable host address of the server holding
-     *                         the resource
-     * @param uri              the rest of the resource's URI that will permit messages to be
-     *                         properly routed.
-     *                         Example: /a/light
-     * @param connectivityType a type of connectivity indicating the interface. Example: IPV4,
-     *                         IPV6, ALL
-     * @param isObservable     a boolean containing whether the resource supports observation
-     * @param resourceTypeList a collection of resource types implemented by the resource
-     * @param interfaceList    a collection of interfaces that the resource supports/implements
+     * @param host                a string containing a resolvable host address of the server holding
+     *                            the resource
+     * @param uri                 the rest of the resource's URI that will permit messages to be
+     *                            properly routed.
+     *                            Example: /a/light
+     * @param connectivityTypeSet Set of types of connectivity. Example: IP
+     * @param isObservable        a boolean containing whether the resource supports observation
+     * @param resourceTypeList    a collection of resource types implemented by the resource
+     * @param interfaceList       a collection of interfaces that the resource supports/implements
      * @return new resource object
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static OcResource constructResourceObject(
             String host,
             String uri,
-            OcConnectivityType connectivityType,
+            EnumSet<OcConnectivityType> connectivityTypeSet,
             boolean isObservable,
             List<String> resourceTypeList,
             List<String> interfaceList) throws OcException {
         OcPlatform.initCheck();
+        int connTypeInt = 0;
+
+        for (OcConnectivityType connType : OcConnectivityType.values()) {
+            if (connectivityTypeSet.contains(connType))
+                connTypeInt |= connType.getValue();
+        }
         return OcPlatform.constructResourceObject0(
                 host,
                 uri,
-                connectivityType.getValue(),
+                connTypeInt,
                 isObservable,
                 resourceTypeList.toArray(new String[resourceTypeList.size()]),
                 interfaceList.toArray(new String[interfaceList.size()])
@@ -802,7 +876,7 @@ public final class OcPlatform {
      * Allows application entity handler to send response to an incoming request.
      *
      * @param ocResourceResponse resource response
-     * @throws OcException
+     * @throws OcException if failure
      */
     public static void sendResponse(OcResourceResponse ocResourceResponse)
             throws OcException {

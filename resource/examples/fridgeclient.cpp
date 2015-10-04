@@ -42,8 +42,7 @@ static void printUsage()
 {
     std::cout << "Usage: fridgeclient <0|1>" <<std::endl;
     std::cout << "connectivityType: Default IP" << std::endl;
-    std::cout << "connectivityType 0: IPv4" << std::endl;
-    std::cout << "connectivityType 1: IPv6 (Currently Not Supported)" << std::endl;
+    std::cout << "connectivityType 0: IP" << std::endl;
 }
 class ClientFridge
 {
@@ -52,7 +51,7 @@ class ClientFridge
         m_callsMade(0),m_connectivityType(ct)
     {
         std::ostringstream requestURI;
-        requestURI << OC_MULTICAST_DISCOVERY_URI << "?rt=intel.fridge";
+        requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=intel.fridge";
         std::cout << "Fridge Client has started " <<std::endl;
         FindCallback f (std::bind(&ClientFridge::foundDevice, this, PH::_1));
         OCStackResult result = OCPlatform::findResource(
@@ -187,6 +186,7 @@ class ClientFridge
     {
         std::cout << "Got a response from get from the " << resourceName << std::endl;
         std::cout << "Get ID is "<<getId<<" and resource URI is " << resource->uri() << std::endl;
+        std::cout << "Get eCode is "<< eCode << std::endl;
 
         printHeaderOptions(headerOptions);
 
@@ -238,7 +238,7 @@ class ClientFridge
 
     //Callback function to handle response for deleteResource call.
     void deleteResponse(const std::string& resourceName, const HeaderOptions& headerOptions,
-                const int eCode, OCResource::Ptr resource, int deleteId)
+                const int /*eCode*/, OCResource::Ptr resource, int deleteId)
     {
         std::cout << "Got a response from delete from the "<< resourceName << std::endl;
         std::cout << "Delete ID is "<<deleteId<<" and resource URI is "<<resource->uri()<<std::endl;
@@ -286,16 +286,8 @@ int main(int argc, char* argv[])
             {
                 if(optionSelected == 0)
                 {
-                    std::cout << "Using IPv4."<< std::endl;
-                    connectivityType = CT_IP_USE_V4;
-                }
-                else if(optionSelected == 1)
-                {
-                    std::cout << "IPv6 is currently not supported."<< std::endl;
-                    printUsage();
-                    return -1;
-                    //TODO: printUsage to be removed when IPv6 is available.
-                    //connectivityType = CT_IP_USE_V6;
+                    std::cout << "Using IP."<< std::endl;
+                    connectivityType = CT_ADAPTER_IP;
                 }
                 else
                 {

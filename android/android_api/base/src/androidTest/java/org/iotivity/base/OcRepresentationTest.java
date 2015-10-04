@@ -76,22 +76,6 @@ public class OcRepresentationTest extends InstrumentationTestCase {
         assertEquals(expected, actual);
     }
 
-    public void testJSONRepresentation() throws OcException {
-        OcRepresentation representation = new OcRepresentation();
-        String key = "key";
-        int value = 75;
-
-        String emptyJson1 = representation.getJSONRepresentation();
-        representation.setValue(key, value);
-        String intValue1 = representation.getJSONRepresentation();
-        representation.remove(key);
-        String emptyJson2 = representation.getJSONRepresentation();
-        assertEquals(emptyJson1, emptyJson2);
-        representation.setValue(key, value);
-        String intValue2 = representation.getJSONRepresentation();
-        assertEquals(intValue1, intValue2);
-    }
-
     public void testResourceTypesGetSet() {
         OcRepresentation representation = new OcRepresentation();
 
@@ -205,6 +189,12 @@ public class OcRepresentationTest extends InstrumentationTestCase {
 
     public void testAttributeAccessByType() throws OcException {
         OcRepresentation rep = new OcRepresentation();
+
+        //null
+        OcRepresentation repNull = null;
+        rep.setValue("nullKey", repNull);
+        OcRepresentation repNullActual = rep.getValue("nullKey");
+        assertNull(repNullActual);
 
         //integer
         String intK = "intK";

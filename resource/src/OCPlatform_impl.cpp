@@ -42,6 +42,7 @@
 #include "OCApi.h"
 #include "OCException.h"
 #include "OCUtilities.h"
+#include "ocpayload.h"
 
 #include "oc_logger.hpp"
 
@@ -56,6 +57,7 @@ namespace OC
 
     void OCPlatform_impl::Configure(const PlatformConfig& config)
     {
+        OCRegisterPersistentStorageHandler(config.ps);
         globalConfig() = config;
     }
 
@@ -78,6 +80,7 @@ namespace OC
                 break;
 
             case ModeType::Both:
+            case ModeType::Gateway:
                 m_server = m_WrapperInstance->CreateServerWrapper(m_csdkLock, config);
                 m_client = m_WrapperInstance->CreateClientWrapper(m_csdkLock, config);
                 break;
@@ -131,13 +134,14 @@ namespace OC
          return result_guard(OC_STACK_ERROR);
         }
 
-        std::string payload(pResponse->getResourceRepresentation().getJSONRepresentation());
-
-        return result_guard(
+        OCRepPayload* pl = pResponse->getResourceRepresentation().getPayload();
+        OCStackResult result =
                    OCNotifyListOfObservers(resourceHandle,
                             &observationIds[0], observationIds.size(),
-                            payload.c_str(),
-                            static_cast<OCQualityOfService>(QoS)));
+                            pl,
+                            static_cast<OCQualityOfService>(QoS));
+        OCRepPayloadDestroy(pl);
+        return result_guard(result);
     }
 
     OCResource::Ptr OCPlatform_impl::constructResourceObject(const std::string& host,
@@ -355,6 +359,11 @@ namespace OC
     {
         return checked_guard(m_server, &IServerWrapper::sendResponse,
                              pResponse);
+    }
+
+    std::weak_ptr<std::recursive_mutex> OCPlatform_impl::csdkLock()
+    {
+        return m_csdkLock;
     }
 } //namespace OC
 

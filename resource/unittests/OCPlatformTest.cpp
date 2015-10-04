@@ -32,22 +32,31 @@ namespace OCPlatformTest
     const uint8_t gResourceProperty = OC_DISCOVERABLE | OC_OBSERVABLE;
     OCResourceHandle resourceHandle;
 
+    //OCPersistent Storage Handlers
+    static FILE* client_open(const char * /*path*/, const char *mode)
+    {
+        std::cout << "<===Opening SVR DB file = './oic_svr_db_client.json' with mode = '" << mode
+                << "' " << std::endl;
+        return fopen("./oic_svr_db_client.json", mode);
+    }
+    OCPersistentStorage gps {client_open, fread, fwrite, fclose, unlink };
+
     // Callbacks
-    OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)
+    OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> /*request*/)
     {
         return OC_EH_OK;
     }
 
-    void foundResource(std::shared_ptr<OCResource> resource)
+    void foundResource(std::shared_ptr<OCResource> /*resource*/)
     {
     }
 
-    void receivedDeviceInfo(const OCRepresentation& rep)
+    void receivedDeviceInfo(const OCRepresentation& /*rep*/)
     {
     }
 
-    void presenceHandler(OCStackResult result,
-            const unsigned int nonce, const std::string& hostAddress)
+    void presenceHandler(OCStackResult /*result*/,
+            const unsigned int /*nonce*/, const std::string& /*hostAddress*/)
     {
     }
 
@@ -66,7 +75,9 @@ namespace OCPlatformTest
 
     OCResourceHandle RegisterResource(std::string uri, std::string type, std::string iface)
     {
-        PlatformConfig cfg = {};
+        PlatformConfig cfg
+        { OC::ServiceType::OutOfProc, OC::ModeType::Server, "0.0.0.0", 0,
+                OC::QualityOfService::LowQos, &gps };
         OCPlatform::Configure(cfg);
         EXPECT_EQ(OC_STACK_OK,OCPlatform::registerResource(
                                         resourceHandle, uri, type,
@@ -76,7 +87,9 @@ namespace OCPlatformTest
 
     OCResourceHandle RegisterResource(std::string uri, std::string type)
     {
-        PlatformConfig cfg = {};
+        PlatformConfig cfg
+        { OC::ServiceType::OutOfProc, OC::ModeType::Server, "0.0.0.0", 0,
+                OC::QualityOfService::LowQos, &gps };
         OCPlatform::Configure(cfg);
         EXPECT_EQ(OC_STACK_OK, OCPlatform::registerResource(
                                         resourceHandle, uri, type,
@@ -86,7 +99,9 @@ namespace OCPlatformTest
 
     OCResourceHandle RegisterResource(std::string uri)
     {
-        PlatformConfig cfg = {};
+        PlatformConfig cfg
+        { OC::ServiceType::OutOfProc, OC::ModeType::Server, "0.0.0.0", 0,
+                OC::QualityOfService::LowQos, &gps };
         OCPlatform::Configure(cfg);
         EXPECT_EQ(OC_STACK_OK, OCPlatform::registerResource(
                                         resourceHandle, uri, gResourceTypeName,
@@ -147,12 +162,13 @@ namespace OCPlatformTest
 
     TEST(ConfigureTest, ConfigureServerOutProc)
     {
-        PlatformConfig cfg {
+        PlatformConfig cfg
+        {
             OC::ServiceType::OutOfProc,
             OC::ModeType::Server,
             "0.0.0.0",
             0,
-            OC::QualityOfService::LowQos
+            OC::QualityOfService::LowQos, &gps
         };
         std::string uri = "/a/light67";
         std::string type = "core.light";
@@ -187,7 +203,7 @@ namespace OCPlatformTest
             OC::ModeType::Server,
             "0.0.0.0",
             0,
-            OC::QualityOfService::LowQos
+            OC::QualityOfService::LowQos, &gps
         };
         OCPlatform::Configure(cfg);
 
@@ -201,19 +217,79 @@ namespace OCPlatformTest
         std::string uri = "/a/light70";
         std::string type = "core.light";
         uint8_t gResourceProperty = 0;
-        PlatformConfig cfg {
+        PlatformConfig cfg
+        {
             OC::ServiceType::InProc,
             OC::ModeType::Client,
             "0.0.0.0",
             0,
-            OC::QualityOfService::LowQos
+            OC::QualityOfService::LowQos,
+            &gps
         };
-        OCPlatform::Configure(cfg);
 
         EXPECT_NO_THROW(OCPlatform::registerResource(
                  resourceHandle, uri, type,
                  gResourceInterface, entityHandler, gResourceProperty));
     }
+    //PersistentStorageTest
+    TEST(ConfigureTest, ConfigureDefaultNULLPersistentStorage)
+    {
+        PlatformConfig cfg {
+             OC::ServiceType::InProc,
+             OC::ModeType::Both,
+             "0.0.0.0",
+             0,
+             OC::QualityOfService::LowQos
+         };
+         OCPlatform::Configure(cfg);
+         EXPECT_NO_THROW(OCPlatform::setDefaultDeviceEntityHandler(nullptr));
+     }
+
+    //PersistentStorageTest
+    TEST(ConfigureTest, ConfigureNULLPersistentStorage)
+    {
+        PlatformConfig cfg {
+             OC::ServiceType::InProc,
+             OC::ModeType::Both,
+             "0.0.0.0",
+             0,
+             OC::QualityOfService::LowQos,
+             nullptr
+         };
+         OCPlatform::Configure(cfg);
+         EXPECT_NO_THROW(OCPlatform::setDefaultDeviceEntityHandler(nullptr));
+     }
+
+    //PersistentStorageTest
+    TEST(ConfigureTest, ConfigurePersistentStorage)
+    {
+         PlatformConfig cfg {
+             OC::ServiceType::InProc,
+             OC::ModeType::Both,
+             "0.0.0.0",
+             0,
+             OC::QualityOfService::LowQos,
+             &gps
+         };
+         OCPlatform::Configure(cfg);
+         EXPECT_NO_THROW(OCPlatform::setDefaultDeviceEntityHandler(nullptr));
+     }
+
+    //PersistentStorageTest
+    TEST(ConfigureTest, ConfigureNULLHandlersPersistentStorage)
+    {
+        PlatformConfig cfg {
+             OC::ServiceType::InProc,
+             OC::ModeType::Both,
+             "0.0.0.0",
+             0,
+             OC::QualityOfService::LowQos,
+             &gps
+         };
+         OCPlatform::Configure(cfg);
+         EXPECT_NO_THROW(OCPlatform::setDefaultDeviceEntityHandler(nullptr));
+     }
+
 
     //RegisterResourceTest
     TEST(RegisterResourceTest, RegisterSingleResource)
@@ -466,7 +542,7 @@ namespace OCPlatformTest
     TEST(FindResourceTest, DISABLED_FindResourceValid)
     {
       std::ostringstream requestURI;
-      requestURI << OC_WELL_KNOWN_QUERY << "?rt=core.light";
+      requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=core.light";
       EXPECT_EQ(OC_STACK_OK, OCPlatform::findResource("", requestURI.str(),
               CT_DEFAULT, &foundResource));
     }
@@ -480,7 +556,7 @@ namespace OCPlatformTest
     TEST(FindResourceTest, FindResourceNullResourceURI1)
     {
       std::ostringstream requestURI;
-      requestURI << OC_WELL_KNOWN_QUERY << "?rt=core.light";
+      requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=core.light";
       EXPECT_ANY_THROW(OCPlatform::findResource(nullptr, requestURI.str(),
               CT_DEFAULT, &foundResource));
     }
@@ -488,7 +564,7 @@ namespace OCPlatformTest
     TEST(FindResourceTest, FindResourceNullHost)
     {
       std::ostringstream requestURI;
-      requestURI << OC_WELL_KNOWN_QUERY << "?rt=core.light";
+      requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=core.light";
       EXPECT_ANY_THROW(OCPlatform::findResource(nullptr, requestURI.str(),
               CT_DEFAULT, &foundResource));
     }
@@ -496,7 +572,7 @@ namespace OCPlatformTest
     TEST(FindResourceTest, FindResourceNullresourceHandler)
     {
       std::ostringstream requestURI;
-      requestURI << OC_WELL_KNOWN_QUERY << "?rt=core.light";
+      requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=core.light";
       EXPECT_THROW(OCPlatform::findResource("", requestURI.str(),
               CT_DEFAULT, NULL), OC::OCException);
     }
@@ -504,7 +580,7 @@ namespace OCPlatformTest
     TEST(FindResourceTest, DISABLED_FindResourceWithLowQoS)
     {
         std::ostringstream requestURI;
-        requestURI << OC_WELL_KNOWN_QUERY << "?rt=core.light";
+        requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=core.light";
         EXPECT_EQ(OC_STACK_OK,
                 OCPlatform::findResource("", requestURI.str(), CT_DEFAULT, &foundResource,
                         OC::QualityOfService::LowQos));
@@ -513,7 +589,7 @@ namespace OCPlatformTest
     TEST(FindResourceTest, DISABLED_FindResourceWithMidQos)
     {
         std::ostringstream requestURI;
-        requestURI << OC_WELL_KNOWN_QUERY << "?rt=core.light";
+        requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=core.light";
         EXPECT_EQ(OC_STACK_OK,
                 OCPlatform::findResource("", requestURI.str(), CT_DEFAULT, &foundResource,
                         OC::QualityOfService::MidQos));
@@ -522,7 +598,7 @@ namespace OCPlatformTest
     TEST(FindResourceTest, DISABLED_FindResourceWithHighQos)
     {
         std::ostringstream requestURI;
-        requestURI << OC_WELL_KNOWN_QUERY << "?rt=core.light";
+        requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=core.light";
         EXPECT_EQ(OC_STACK_OK,
                 OCPlatform::findResource("", requestURI.str(), CT_DEFAULT, &foundResource,
                         OC::QualityOfService::HighQos));
@@ -531,7 +607,7 @@ namespace OCPlatformTest
     TEST(FindResourceTest, DISABLED_FindResourceWithNaQos)
     {
         std::ostringstream requestURI;
-        requestURI << OC_WELL_KNOWN_QUERY << "?rt=core.light";
+        requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=core.light";
         EXPECT_EQ(OC_STACK_OK,
                 OCPlatform::findResource("", requestURI.str(), CT_DEFAULT, &foundResource,
                         OC::QualityOfService::NaQos));
@@ -623,14 +699,13 @@ namespace OCPlatformTest
         OCDeviceInfo deviceInfo;
 
         DuplicateString(&deviceInfo.deviceName, "myDeviceName");
-
         EXPECT_EQ(OC_STACK_OK, OCPlatform::registerDeviceInfo(deviceInfo));
         EXPECT_NO_THROW(DeleteDeviceInfo(deviceInfo));
     }
 
     TEST(RegisterDeviceInfoTest, RegisterDeviceInfoWithEmptyObject)
     {
-        OCDeviceInfo di = {};
+        OCDeviceInfo di = {0};
         EXPECT_ANY_THROW(OCPlatform::registerDeviceInfo(di));
     }
 
@@ -699,5 +774,4 @@ namespace OCPlatformTest
                 OC_MULTICAST_IP, CT_DEFAULT, &presenceHandler));
         EXPECT_EQ(OC_STACK_OK, OCPlatform::unsubscribePresence(presenceHandle));
     }
-
 }

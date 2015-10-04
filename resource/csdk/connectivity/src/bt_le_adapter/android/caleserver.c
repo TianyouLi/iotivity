@@ -52,7 +52,7 @@ static ca_thread_pool_t g_threadPoolHandle = NULL;
 static bool g_isStartServer = false;
 static bool g_isInitializedServer = false;
 
-static CABLEServerDataReceivedCallback g_CABLEServerDataReceivedCallback = NULL;
+static CABLEDataReceivedCallback g_CABLEServerDataReceivedCallback = NULL;
 static ca_mutex g_bleReqRespCbMutex = NULL;
 static ca_mutex g_bleClientBDAddressMutex = NULL;
 static ca_mutex g_connectedDeviceListMutex = NULL;
@@ -174,7 +174,7 @@ jobject CALEServerSetResponseData(JNIEnv *env, jbyteArray responseData)
 
     jclass jni_cid_bluetoothGattCharacteristic = (*env)->FindClass(env, "android/bluetooth/"
                                                                    "BluetoothGattCharacteristic");
-    if (!jni_cid_bluetoothGattService)
+    if (!jni_cid_bluetoothGattCharacteristic)
     {
         OIC_LOG(ERROR, TAG, "jni_cid_bluetoothGattCharacteristic is null");
         return NULL;
@@ -184,7 +184,7 @@ jobject CALEServerSetResponseData(JNIEnv *env, jbyteArray responseData)
                                                        "getService",
                                                        "(Ljava/util/UUID;)Landroid/bluetooth/"
                                                        "BluetoothGattService;");
-    if (!jni_cid_bluetoothGattService)
+    if (!jni_mid_getService)
     {
         OIC_LOG(ERROR, TAG, "jni_mid_getService is null");
         return NULL;
@@ -343,6 +343,44 @@ CAResult_t CALEServerSendResponse(JNIEnv *env, jobject device, jint requestId, j
 
     OIC_LOG(DEBUG, TAG, "OUT - CALEServerSendResponse");
     return CA_STATUS_OK;
+}
+
+CAResult_t CALEStartAdvertise()
+{
+    if (!g_jvm)
+    {
+        OIC_LOG(ERROR, TAG, "g_jvm is null");
+        return CA_STATUS_FAILED;
+    }
+
+    bool isAttached = false;
+    JNIEnv* env;
+    jint res = (*g_jvm)->GetEnv(g_jvm, (void**) &env, JNI_VERSION_1_6);
+    if (JNI_OK != res)
+    {
+        OIC_LOG(INFO, TAG, "Could not get JNIEnv pointer");
+        res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
+
+        if (JNI_OK != res)
+        {
+            OIC_LOG(ERROR, TAG, "AttachCurrentThread has failed");
+            return CA_STATUS_FAILED;
+        }
+        isAttached = true;
+    }
+
+    // start advertise
+    CAResult_t ret = CALEServerStartAdvertise(env, g_leAdvertiseCallback);
+    if (CA_STATUS_OK != ret)
+    {
+        OIC_LOG(ERROR, TAG, "CALEServerStartAdvertise has failed");
+    }
+
+    if (isAttached)
+    {
+        (*g_jvm)->DetachCurrentThread(g_jvm);
+    }
+    return ret;
 }
 
 CAResult_t CALEServerStartAdvertise(JNIEnv *env, jobject advertiseCallback)
@@ -615,7 +653,7 @@ CAResult_t CALEServerStartAdvertise(JNIEnv *env, jobject advertiseCallback)
 
 CAResult_t CALEServerStopAdvertise(JNIEnv *env, jobject advertiseCallback)
 {
-    OIC_LOG(DEBUG, TAG, "IN - LEServerStopAdvertise");
+    OIC_LOG(DEBUG, TAG, "LEServerStopAdvertise");
     VERIFY_NON_NULL(env, TAG, "env is null");
     VERIFY_NON_NULL(advertiseCallback, TAG, "advertiseCallback is null");
 
@@ -644,9 +682,9 @@ CAResult_t CALEServerStopAdvertise(JNIEnv *env, jobject advertiseCallback)
                                                                     "getDefaultAdapter",
                                                                     "()Landroid/bluetooth/"
                                                                     "BluetoothAdapter;");
-    if (!jni_cid_leAdvertiser)
+    if (!jni_mid_getDefaultAdapter)
     {
-        OIC_LOG(ERROR, TAG, "jni_cid_leAdvertiser is null");
+        OIC_LOG(ERROR, TAG, "jni_mid_getDefaultAdapter is null");
         return CA_STATUS_FAILED;
     }
 
@@ -697,8 +735,6 @@ CAResult_t CALEServerStopAdvertise(JNIEnv *env, jobject advertiseCallback)
     }
 
     OIC_LOG(DEBUG, TAG, "Advertising stopped!!");
-
-    OIC_LOG(DEBUG, TAG, "OUT - LEServerStopAdvertise");
     return CA_STATUS_OK;
 }
 
@@ -879,23 +915,16 @@ jobject CALEServerCreateGattService(JNIEnv *env)
 
     jfieldID jni_fid_readProperties = (*env)->GetStaticFieldID(env,
                                                                jni_cid_bluetoothGattCharacteristic,
-                                                               "PROPERTY_READ", "I");
+                                                               "PROPERTY_NOTIFY", "I");
     if (!jni_fid_readProperties)
     {
         OIC_LOG(ERROR, TAG, "jni_fid_readProperties is null");
         return NULL;
     }
 
-#ifdef USE_PROPERTY_WRITE_RESPONSE
-    jfieldID jni_fid_writeProperties = (*env)->GetStaticFieldID(env,
-                                                                jni_cid_bluetoothGattCharacteristic,
-                                                                "PROPERTY_WRITE", "I");
-#else
     jfieldID jni_fid_writeProperties = (*env)->GetStaticFieldID(env,
                                                                 jni_cid_bluetoothGattCharacteristic,
                                                                 "PROPERTY_WRITE_NO_RESPONSE", "I");
-#endif
-
     if (!jni_fid_writeProperties)
     {
         OIC_LOG(ERROR, TAG, "jni_fid_writeProperties is null");
@@ -978,20 +1007,18 @@ jobject CALEServerCreateGattService(JNIEnv *env)
                                                              jni_cid_bluetoothGattCharacteristic,
                                                              jni_fid_readPermissions);
 
+    jint jni_int_writePermissions = (*env)->GetStaticIntField(env,
+                                                              jni_cid_bluetoothGattCharacteristic,
+                                                              jni_fid_writePermissions);
+
     jobject jni_readCharacteristic = (*env)->NewObject(env, jni_cid_bluetoothGattCharacteristic,
                                                        jni_mid_bluetoothGattCharacteristic,
                                                        jni_obj_readUuid, jni_int_readProperties,
-                                                       jni_int_readPermissions);
+                                                       jni_int_readPermissions|
+                                                       jni_int_writePermissions);
     if (!jni_readCharacteristic)
     {
         OIC_LOG(ERROR, TAG, "jni_readCharacteristic is null");
-        return NULL;
-    }
-
-    CAResult_t res = CALEServerAddDescriptor(env, jni_readCharacteristic);
-    if (CA_STATUS_OK != res)
-    {
-        OIC_LOG(ERROR, TAG, "CALEServerAddDescriptor has failed");
         return NULL;
     }
 
@@ -1013,10 +1040,6 @@ jobject CALEServerCreateGattService(JNIEnv *env)
     jint jni_int_writeProperties = (*env)->GetStaticIntField(env,
                                                              jni_cid_bluetoothGattCharacteristic,
                                                              jni_fid_writeProperties);
-
-    jint jni_int_writePermissions = (*env)->GetStaticIntField(env,
-                                                              jni_cid_bluetoothGattCharacteristic,
-                                                              jni_fid_writePermissions);
 
     jobject jni_writeCharacteristic = (*env)->NewObject(env, jni_cid_bluetoothGattCharacteristic,
                                                         jni_mid_bluetoothGattCharacteristic,
@@ -1042,7 +1065,7 @@ jobject CALEServerCreateGattService(JNIEnv *env)
 
 CAResult_t CALEServerAddDescriptor(JNIEnv *env, jobject characteristic)
 {
-    OIC_LOG(DEBUG, TAG, "IN - CALEServerAddDescriptor");
+    OIC_LOG(DEBUG, TAG, "CALEServerAddDescriptor");
     VERIFY_NON_NULL(env, TAG, "env is null");
     VERIFY_NON_NULL(characteristic, TAG, "characteristic is null");
 
@@ -1125,8 +1148,6 @@ CAResult_t CALEServerAddDescriptor(JNIEnv *env, jobject characteristic)
     {
         OIC_LOG(DEBUG, TAG, "addDescriptor success");
     }
-
-    OIC_LOG(DEBUG, TAG, "OUT - CALEServerAddDescriptor");
     return CA_STATUS_OK;
 }
 
@@ -1298,6 +1319,44 @@ CAResult_t CALEServerDisconnect(JNIEnv *env, jobject bluetoothDevice)
     return CA_STATUS_OK;
 }
 
+CAResult_t CALEServerGattClose(JNIEnv *env, jobject bluetoothGattServer)
+{
+    // GATT CLOSE
+    OIC_LOG(DEBUG, TAG, "GattServer Close");
+    VERIFY_NON_NULL(bluetoothGattServer, TAG, "bluetoothGattServer is null");
+    VERIFY_NON_NULL(env, TAG, "env is null");
+
+    // get BluetoothGatt class
+    OIC_LOG(DEBUG, TAG, "get BluetoothGatt class");
+    jclass jni_cid_BluetoothGatt = (*env)->FindClass(env, "android/bluetooth/BluetoothGattServer");
+    if (!jni_cid_BluetoothGatt)
+    {
+        OIC_LOG(ERROR, TAG, "jni_cid_BluetoothGatt is null");
+        return CA_STATUS_FAILED;
+    }
+
+    jmethodID jni_mid_closeGatt = (*env)->GetMethodID(env, jni_cid_BluetoothGatt, "close", "()V");
+    if (!jni_mid_closeGatt)
+    {
+        OIC_LOG(ERROR, TAG, "jni_mid_closeGatt is null");
+        return CA_STATUS_OK;
+    }
+
+    // call disconnect gatt method
+    OIC_LOG(DEBUG, TAG, "request to close GATT");
+    (*env)->CallVoidMethod(env, bluetoothGattServer, jni_mid_closeGatt);
+
+    if ((*env)->ExceptionCheck(env))
+    {
+        OIC_LOG(ERROR, TAG, "closeGATT has failed");
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+        return CA_STATUS_FAILED;
+    }
+
+    return CA_STATUS_OK;
+}
+
 CAResult_t CALEServerSend(JNIEnv *env, jobject bluetoothDevice, jbyteArray responseData)
 {
     OIC_LOG(DEBUG, TAG, "IN - CALEServerSend");
@@ -1423,7 +1482,7 @@ void CALEServerTerminate()
     jint res = (*g_jvm)->GetEnv(g_jvm, (void**) &env, JNI_VERSION_1_6);
     if (JNI_OK != res)
     {
-        OIC_LOG(ERROR, TAG, "Could not get JNIEnv pointer");
+        OIC_LOG(INFO, TAG, "Could not get JNIEnv pointer");
         res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
 
         if (JNI_OK != res)
@@ -1434,7 +1493,13 @@ void CALEServerTerminate()
         isAttached = true;
     }
 
-    CAResult_t ret = CALEServerStopMulticastServer(0);
+    CAResult_t ret = CALEServerGattClose(env, g_bluetoothGattServer);
+    if (CA_STATUS_OK != ret)
+    {
+        OIC_LOG(ERROR, TAG, "CALEServerGattClose has failed");
+    }
+
+    ret = CALEServerStopMulticastServer(0);
     if (CA_STATUS_OK != ret)
     {
         OIC_LOG(ERROR, TAG, "CALEServerStopMulticastServer has failed");
@@ -1481,9 +1546,9 @@ void CALEServerTerminate()
     OIC_LOG(DEBUG, TAG, "OUT - CALEServerTerminate");
 }
 
-CAResult_t CALEServerSendUnicastMessage(const char* address, const char* data, uint32_t dataLen)
+CAResult_t CALEServerSendUnicastMessage(const char* address, const uint8_t* data, uint32_t dataLen)
 {
-    OIC_LOG_V(DEBUG, TAG, "IN - CALEServerSendUnicastMessage(%s, %s)", address, data);
+    OIC_LOG_V(DEBUG, TAG, "CALEServerSendUnicastMessage(%s, %p)", address, data);
     VERIFY_NON_NULL(address, TAG, "address is null");
     VERIFY_NON_NULL(data, TAG, "data is null");
 
@@ -1498,7 +1563,7 @@ CAResult_t CALEServerSendUnicastMessage(const char* address, const char* data, u
     jint res = (*g_jvm)->GetEnv(g_jvm, (void**) &env, JNI_VERSION_1_6);
     if (JNI_OK != res)
     {
-        OIC_LOG(ERROR, TAG, "Could not get JNIEnv pointer");
+        OIC_LOG(INFO, TAG, "Could not get JNIEnv pointer");
         res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
 
         if (JNI_OK != res)
@@ -1520,13 +1585,12 @@ CAResult_t CALEServerSendUnicastMessage(const char* address, const char* data, u
         (*g_jvm)->DetachCurrentThread(g_jvm);
     }
 
-    OIC_LOG(DEBUG, TAG, "OUT - CALEServerSendUnicastMessage");
     return ret;
 }
 
-CAResult_t CALEServerSendMulticastMessage(const char* data, uint32_t dataLen)
+CAResult_t CALEServerSendMulticastMessage(const uint8_t* data, uint32_t dataLen)
 {
-    OIC_LOG_V(DEBUG, TAG, "IN - CALEServerSendMulticastMessage(%s)", data);
+    OIC_LOG_V(DEBUG, TAG, "CALEServerSendMulticastMessage(%p)", data);
     VERIFY_NON_NULL(data, TAG, "data is null");
 
     if (!g_jvm)
@@ -1540,7 +1604,7 @@ CAResult_t CALEServerSendMulticastMessage(const char* data, uint32_t dataLen)
     jint res = (*g_jvm)->GetEnv(g_jvm, (void**) &env, JNI_VERSION_1_6);
     if (JNI_OK != res)
     {
-        OIC_LOG(ERROR, TAG, "Could not get JNIEnv pointer");
+        OIC_LOG(INFO, TAG, "Could not get JNIEnv pointer");
         res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
 
         if (JNI_OK != res)
@@ -1562,7 +1626,6 @@ CAResult_t CALEServerSendMulticastMessage(const char* data, uint32_t dataLen)
         (*g_jvm)->DetachCurrentThread(g_jvm);
     }
 
-    OIC_LOG(DEBUG, TAG, "OUT - CALEServerSendMulticastMessage");
     return ret;
 }
 
@@ -1593,7 +1656,7 @@ CAResult_t CALEServerStartMulticastServer()
     jint res = (*g_jvm)->GetEnv(g_jvm, (void**) &env, JNI_VERSION_1_6);
     if (JNI_OK != res)
     {
-        OIC_LOG(ERROR, TAG, "Could not get JNIEnv pointer");
+        OIC_LOG(INFO, TAG, "Could not get JNIEnv pointer");
         res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
 
         if (JNI_OK != res)
@@ -1651,7 +1714,7 @@ CAResult_t CALEServerStopMulticastServer()
     jint res = (*g_jvm)->GetEnv(g_jvm, (void**) &env, JNI_VERSION_1_6);
     if (JNI_OK != res)
     {
-        OIC_LOG(ERROR, TAG, "Could not get JNIEnv pointer");
+        OIC_LOG(INFO, TAG, "Could not get JNIEnv pointer");
         res = (*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL);
 
         if (JNI_OK != res)
@@ -1685,10 +1748,10 @@ void CALEServerSetCallback(CAPacketReceiveCallback callback)
     g_packetReceiveCallback = callback;
 }
 
-CAResult_t CALEServerSendUnicastMessageImpl(JNIEnv *env, const char* address, const char* data,
+CAResult_t CALEServerSendUnicastMessageImpl(JNIEnv *env, const char* address, const uint8_t* data,
                                             uint32_t dataLen)
 {
-    OIC_LOG_V(DEBUG, TAG, "IN - CALEServerSendUnicastMessageImpl, address: %s, data: %s",
+    OIC_LOG_V(DEBUG, TAG, "CALEServerSendUnicastMessageImpl, address: %s, data: %p",
             address, data);
     VERIFY_NON_NULL(env, TAG, "env is null");
     VERIFY_NON_NULL(address, TAG, "address is null");
@@ -1756,13 +1819,12 @@ CAResult_t CALEServerSendUnicastMessageImpl(JNIEnv *env, const char* address, co
         return CA_STATUS_FAILED;
     }
 
-    OIC_LOG(DEBUG, TAG, "OUT - CALEServerSendUnicastMessageImpl");
     return CA_STATUS_OK;
 }
 
-CAResult_t CALEServerSendMulticastMessageImpl(JNIEnv *env, const char *data, uint32_t dataLen)
+CAResult_t CALEServerSendMulticastMessageImpl(JNIEnv *env, const uint8_t *data, uint32_t dataLen)
 {
-    OIC_LOG_V(DEBUG, TAG, "IN - CALEServerSendMulticastMessageImpl, send to, data: %s", data);
+    OIC_LOG_V(DEBUG, TAG, "CALEServerSendMulticastMessageImpl, send to, data: %s", data);
     VERIFY_NON_NULL(env, TAG, "env is null");
     VERIFY_NON_NULL(data, TAG, "data is null");
 
@@ -1793,14 +1855,11 @@ CAResult_t CALEServerSendMulticastMessageImpl(JNIEnv *env, const char *data, uin
         }
     }
 
-    OIC_LOG(DEBUG, TAG, "OUT - CALEServerSendMulticastMessageImpl");
     return CA_STATUS_OK;
 }
 
 void CALEServerCreateCachedDeviceList()
 {
-    OIC_LOG(DEBUG, TAG, "IN - CALEServerCreateCachedDeviceList");
-
     ca_mutex_lock(g_connectedDeviceListMutex);
     // create new object array
     if (!g_connectedDeviceList)
@@ -1809,13 +1868,10 @@ void CALEServerCreateCachedDeviceList()
         g_connectedDeviceList = u_arraylist_create();
     }
     ca_mutex_unlock(g_connectedDeviceListMutex);
-
-    OIC_LOG(DEBUG, TAG, "OUT - CALEServerCreateCachedDeviceList");
 }
 
 bool CALEServerIsDeviceInList(JNIEnv *env, const char* remoteAddress)
 {
-    OIC_LOG(DEBUG, TAG, "IN - CALEServerIsDeviceInList");
     VERIFY_NON_NULL_RET(env, TAG, "env is null", false);
     VERIFY_NON_NULL_RET(remoteAddress, TAG, "remoteAddress is null", false);
 
@@ -1864,7 +1920,6 @@ bool CALEServerIsDeviceInList(JNIEnv *env, const char* remoteAddress)
     }
 
     OIC_LOG(DEBUG, TAG, "there are no device in the list");
-    OIC_LOG(DEBUG, TAG, "OUT - CALEServerCreateCachedDeviceList");
     return false;
 }
 
@@ -1993,12 +2048,11 @@ CAResult_t CALEServerRemoveDevice(JNIEnv *env, jstring address)
                 (*env)->ReleaseStringUTFChars(env, address, remoteAddress);
                 (*env)->DeleteGlobalRef(env, jarrayObj);
 
-                CAResult_t res = CALEServerReorderinglist(index);
-                if (CA_STATUS_OK != res)
+                if (NULL == u_arraylist_remove(g_connectedDeviceList, index))
                 {
-                    OIC_LOG(ERROR, TAG, "CALEServerReorderinglist has failed");
+                    OIC_LOG(ERROR, TAG, "List removal failed.");
                     ca_mutex_unlock(g_connectedDeviceListMutex);
-                    return res;
+                    return CA_STATUS_FAILED;
                 }
                 ca_mutex_unlock(g_connectedDeviceListMutex);
                 return CA_STATUS_OK;
@@ -2016,39 +2070,14 @@ CAResult_t CALEServerRemoveDevice(JNIEnv *env, jstring address)
     return CA_STATUS_FAILED;
 }
 
-CAResult_t CALEServerReorderinglist(uint32_t index)
-{
-    if (!g_connectedDeviceList)
-    {
-        OIC_LOG(ERROR, TAG, "g_connectedDeviceList is null");
-        return CA_STATUS_FAILED;
-    }
-
-    if (index >= g_connectedDeviceList->length)
-    {
-        OIC_LOG(ERROR, TAG, "index is not available");
-        return CA_STATUS_FAILED;
-    }
-
-    if (index < g_connectedDeviceList->length - 1)
-    {
-        memmove(&g_connectedDeviceList->data[index], &g_connectedDeviceList->data[index + 1],
-                (g_connectedDeviceList->length - index - 1) * sizeof(void *));
-    }
-
-    g_connectedDeviceList->size--;
-    g_connectedDeviceList->length--;
-
-    return CA_STATUS_OK;
-}
-
 JNIEXPORT void JNICALL
 Java_org_iotivity_ca_CaLeServerInterface_caLeRegisterGattServerCallback(JNIEnv *env, jobject obj,
-                                                                         jobject callback)
+                                                                        jobject callback)
 {
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface - Register Le Gatt Server Callback");
-    VERIFY_NON_NULL_VOID(env, TAG, "env is null");
-    VERIFY_NON_NULL_VOID(callback, TAG, "callback is null");
+    OIC_LOG(DEBUG, TAG, "Register Le Gatt Server Callback");
+    VERIFY_NON_NULL_VOID(env, TAG, "env");
+    VERIFY_NON_NULL_VOID(obj, TAG, "obj");
+    VERIFY_NON_NULL_VOID(callback, TAG, "callback");
 
     g_bluetoothGattServerCallback = (*env)->NewGlobalRef(env, callback);
 }
@@ -2058,9 +2087,10 @@ Java_org_iotivity_ca_CaLeServerInterface_caLeRegisterBluetoothLeAdvertiseCallbac
                                                                                   jobject obj,
                                                                                   jobject callback)
 {
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface - Register Le Advertise Callback");
-    VERIFY_NON_NULL_VOID(env, TAG, "env is null");
-    VERIFY_NON_NULL_VOID(callback, TAG, "callback is null");
+    OIC_LOG(DEBUG, TAG, "Register Le Advertise Callback");
+    VERIFY_NON_NULL_VOID(env, TAG, "env");
+    VERIFY_NON_NULL_VOID(obj, TAG, "obj");
+    VERIFY_NON_NULL_VOID(callback, TAG, "callback");
 
     g_leAdvertiseCallback = (*env)->NewGlobalRef(env, callback);
 }
@@ -2069,11 +2099,12 @@ JNIEXPORT void JNICALL
 Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerConnectionStateChangeCallback(
         JNIEnv *env, jobject obj, jobject device, jint status, jint newState)
 {
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface - Gatt Server ConnectionStateChange Callback");
+    OIC_LOG(DEBUG, TAG, " Gatt Server ConnectionStateChange Callback");
     OIC_LOG_V(DEBUG, TAG, "New connection State: %d", newState);
 
-    VERIFY_NON_NULL_VOID(env, TAG, "env is null");
-    VERIFY_NON_NULL_VOID(device, TAG, "device is null");
+    VERIFY_NON_NULL_VOID(env, TAG, "env");
+    VERIFY_NON_NULL_VOID(obj, TAG, "obj");
+    VERIFY_NON_NULL_VOID(device, TAG, "device");
 
     jclass jni_cid_bluetoothProfile = (*env)->FindClass(env, "android/bluetooth/BluetoothProfile");
     if (!jni_cid_bluetoothProfile)
@@ -2135,6 +2166,20 @@ Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerConnectionStateChangeCall
     else if (newState == jni_int_state_disconnected)
     {
         OIC_LOG(DEBUG, TAG, "LE DISCONNECTED");
+
+        jstring jni_remoteAddress = CALEGetAddressFromBTDevice(env, device);
+        CAResult_t ret = CALEServerRemoveDevice(env, jni_remoteAddress);
+        if (CA_STATUS_OK != ret)
+        {
+            OIC_LOG(ERROR, TAG, "CALEServerRemoveDevice has failed");
+        }
+
+        // start advertise
+        ret = CALEServerStartAdvertise(env, g_leAdvertiseCallback);
+        if (CA_STATUS_OK != ret)
+        {
+            OIC_LOG(ERROR, TAG, "CALEServerStartAdvertise has failed");
+        }
     }
     else
     {
@@ -2145,60 +2190,53 @@ Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerConnectionStateChangeCall
 
 JNIEXPORT void JNICALL
 Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerServiceAddedCallback(JNIEnv *env,
-                                                                             jobject obj,
-                                                                             jint status,
-                                                                             jobject gattService)
+                                                                            jobject obj,
+                                                                            jint status,
+                                                                            jobject gattService)
 {
-    OIC_LOG_V(DEBUG, TAG, "CaLeServerInterface - Gatt Service Added Callback(%d)", status);
+    VERIFY_NON_NULL_VOID(env, TAG, "env");
+    VERIFY_NON_NULL_VOID(obj, TAG, "obj");
+    VERIFY_NON_NULL_VOID(gattService, TAG, "gattService");
+
+    OIC_LOG_V(DEBUG, TAG, "Gatt Service Added Callback(%d)", status);
 }
 
 JNIEXPORT void JNICALL
 Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerCharacteristicReadRequestCallback(
-        JNIEnv *env, jobject obj, jobject device, jint requestId, jint offset,
-        jobject characteristic, jbyteArray data)
+        JNIEnv *env, jobject obj, jobject device, jbyteArray data)
 {
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface - Gatt Server Characteristic Read Request Callback");
-    VERIFY_NON_NULL_VOID(env, TAG, "env is null");
-    VERIFY_NON_NULL_VOID(device, TAG, "device is null");
-
-#ifdef USE_PROPERTY_WRITE_RESPONSE
-    CALEServerSendResponse(env, device, requestId, 0, offset, NULL);
-#endif
-
+    OIC_LOG(DEBUG, TAG, " Gatt Server Characteristic Read Request Callback");
+    VERIFY_NON_NULL_VOID(env, TAG, "env");
+    VERIFY_NON_NULL_VOID(obj, TAG, "obj");
+    VERIFY_NON_NULL_VOID(device, TAG, "device");
+    VERIFY_NON_NULL_VOID(data, TAG, "data");
 }
 
 JNIEXPORT void JNICALL
 Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerCharacteristicWriteRequestCallback(
-        JNIEnv *env, jobject obj, jobject device, jint requestId, jobject characteristic,
-        jbyteArray data, jboolean preparedWrite, jboolean responseNeeded, jint offset,
-        jbyteArray value)
+        JNIEnv *env, jobject obj, jobject device, jbyteArray data)
 {
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface - Gatt Server Characteristic Write Request Callback");
-    VERIFY_NON_NULL_VOID(env, TAG, "env is null");
-    VERIFY_NON_NULL_VOID(device, TAG, "device is null");
-    VERIFY_NON_NULL_VOID(value, TAG, "value is null");
-    VERIFY_NON_NULL_VOID(data, TAG, "data is null");
+    OIC_LOG_V(DEBUG, TAG, "Gatt Server Characteristic Write Request Callback");
+    VERIFY_NON_NULL_VOID(env, TAG, "env");
+    VERIFY_NON_NULL_VOID(obj, TAG, "obj");
+    VERIFY_NON_NULL_VOID(device, TAG, "device");
+    VERIFY_NON_NULL_VOID(data, TAG, "data");
 
-#ifdef USE_PROPERTY_WRITE_RESPONSE
-    CALEServerSendResponse(env, device, requestId, 0, offset, value);
-#endif
-
-    // get Byte Array and covert to char*
+    // get Byte Array and covert to uint8_t*
     jint length = (*env)->GetArrayLength(env, data);
 
     jboolean isCopy;
     jbyte *jni_byte_requestData = (jbyte *) (*env)->GetByteArrayElements(env, data, &isCopy);
 
-    char* requestData = NULL;
-    requestData = (char*) OICMalloc(sizeof(char) * length + 1);
+    uint8_t* requestData = NULL;
+    requestData = OICMalloc(length);
     if (!requestData)
     {
         OIC_LOG(ERROR, TAG, "requestData is null");
         return;
     }
 
-    memcpy(requestData, (const char*) jni_byte_requestData, length);
-    requestData[length] = '\0';
+    memcpy(requestData, jni_byte_requestData, length);
     (*env)->ReleaseByteArrayElements(env, data, jni_byte_requestData, JNI_ABORT);
 
     jstring jni_address = CALEGetAddressFromBTDevice(env, device);
@@ -2217,11 +2255,11 @@ Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerCharacteristicWriteReques
         return;
     }
 
-    OIC_LOG_V(DEBUG, TAG, "remote device address : %s, %s, %d", address, requestData, length);
+    OIC_LOG_V(DEBUG, TAG, "remote device address : %s, %p, %d", address, requestData, length);
 
     ca_mutex_lock(g_bleClientBDAddressMutex);
     uint32_t sentLength = 0;
-    g_CABLEServerDataReceivedCallback(address, OIC_GATT_SERVICE_UUID, requestData, length,
+    g_CABLEServerDataReceivedCallback(address, requestData, length,
                                       &sentLength);
     ca_mutex_unlock(g_bleClientBDAddressMutex);
 
@@ -2229,57 +2267,40 @@ Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerCharacteristicWriteReques
 }
 
 JNIEXPORT void JNICALL
-Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerDescriptorReadRequestCallback(
-        JNIEnv *env, jobject obj, jobject device, jint requestId, jint offset, jobject descriptor)
-{
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface_CALeGattServerDescriptorReadRequestCallback");
-}
-
-JNIEXPORT void JNICALL
-Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerDescriptorWriteRequestCallback(
-        JNIEnv *env, jobject obj, jobject device, jint requestId, jobject descriptor,
-        jboolean preparedWrite, jboolean responseNeeded, jint offset, jbyteArray value)
-{
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface_CALeGattServerDescriptorWriteRequestCallback");
-}
-
-JNIEXPORT void JNICALL
-Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerExecuteWriteCallback(JNIEnv *env,
-                                                                             jobject obj,
-                                                                             jobject device,
-                                                                             jint requestId,
-                                                                             jboolean execute)
-{
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface_CALeGattServerExecuteWriteCallback");
-    VERIFY_NON_NULL_VOID(env, TAG, "env is null");
-    VERIFY_NON_NULL_VOID(device, TAG, "device is null");
-
-//    CALEServerSendResponse(env, device, requestId, 0, 0, NULL);
-}
-
-JNIEXPORT void JNICALL
 Java_org_iotivity_ca_CaLeServerInterface_caLeGattServerNotificationSentCallback(JNIEnv *env,
-                                                                                 jobject obj,
-                                                                                 jobject device,
-                                                                                 jint status)
+                                                                                jobject obj,
+                                                                                jobject device,
+                                                                                jint status)
 {
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface - Gatt Server Notification Sent Callback");
+    VERIFY_NON_NULL_VOID(env, TAG, "env");
+    VERIFY_NON_NULL_VOID(obj, TAG, "obj");
+    VERIFY_NON_NULL_VOID(device, TAG, "device");
+
+    OIC_LOG_V(DEBUG, TAG, "Gatt Server Notification Sent Callback(%d)",
+              status);
 }
 
 JNIEXPORT void JNICALL
-Java_org_iotivity_ca_CaLeServerInterface_caLeAdvertiseStartSuccessCallback(
-        JNIEnv *env, jobject obj, jobject settingsInEffect)
+Java_org_iotivity_ca_CaLeServerInterface_caLeAdvertiseStartSuccessCallback(JNIEnv *env,
+                                                                           jobject obj,
+                                                                           jobject settingsInEffect)
 {
-    OIC_LOG(DEBUG, TAG, "CaLeServerInterface - LE Advertise Start Success Callback");
+    VERIFY_NON_NULL_VOID(env, TAG, "env");
+    VERIFY_NON_NULL_VOID(obj, TAG, "obj");
+    VERIFY_NON_NULL_VOID(settingsInEffect, TAG, "settingsInEffect");
+
+    OIC_LOG(DEBUG, TAG, "LE Advertise Start Success Callback");
 }
 
 JNIEXPORT void JNICALL
 Java_org_iotivity_ca_CaLeServerInterface_caLeAdvertiseStartFailureCallback(JNIEnv *env,
-                                                                            jobject obj,
-                                                                            jint errorCode)
+                                                                           jobject obj,
+                                                                           jint errorCode)
 {
-    OIC_LOG_V(ERROR, TAG, "CaLeServerInterface - LE Advertise Start Failure Callback(%)",
-              errorCode);
+    VERIFY_NON_NULL_VOID(env, TAG, "env");
+    VERIFY_NON_NULL_VOID(obj, TAG, "obj");
+
+    OIC_LOG_V(INFO, TAG, "LE Advertise Start Failure Callback(%d)", errorCode);
 }
 
 /**
@@ -2288,8 +2309,6 @@ Java_org_iotivity_ca_CaLeServerInterface_caLeAdvertiseStartFailureCallback(JNIEn
 
 CAResult_t CAStartLEGattServer()
 {
-    OIC_LOG(DEBUG, TAG, "IN");
-
     CAResult_t ret = CALEServerInitMutexVaraibles();
     if (CA_STATUS_OK != ret)
     {
@@ -2309,37 +2328,26 @@ CAResult_t CAStartLEGattServer()
     // start gatt service
     CALEServerStartMulticastServer();
 
-    OIC_LOG(DEBUG, TAG, "OUT");
     return CA_STATUS_OK;
 }
 
 CAResult_t CAStopLEGattServer()
 {
-    OIC_LOG(DEBUG, TAG, "IN");
-
-    OIC_LOG(DEBUG, TAG, "OUT");
+    OIC_LOG(DEBUG, TAG, "this method is not supported");
     return CA_STATUS_OK;
 }
 
 void CATerminateLEGattServer()
 {
-    OIC_LOG(DEBUG, TAG, "IN");
-
     OIC_LOG(DEBUG, TAG, "Terminat Gatt Server");
     CALEServerTerminate();
-
-    OIC_LOG(DEBUG, TAG, "OUT");
 }
 
-void CASetLEReqRespServerCallback(CABLEServerDataReceivedCallback callback)
+void CASetLEReqRespServerCallback(CABLEDataReceivedCallback callback)
 {
-    OIC_LOG(DEBUG, TAG, "IN");
-
     ca_mutex_lock(g_bleReqRespCbMutex);
     g_CABLEServerDataReceivedCallback = callback;
     ca_mutex_unlock(g_bleReqRespCbMutex);
-
-    OIC_LOG(DEBUG, TAG, "OUT");
 }
 
 void CASetBLEServerErrorHandleCallback(CABLEErrorHandleCallback callback)
@@ -2347,50 +2355,39 @@ void CASetBLEServerErrorHandleCallback(CABLEErrorHandleCallback callback)
     g_serverErrorCallback = callback;
 }
 
-CAResult_t CAUpdateCharacteristicsToGattClient(const char* address, const char *charValue,
-                                               const uint32_t charValueLen)
+CAResult_t CAUpdateCharacteristicsToGattClient(const char *address,
+                                               const uint8_t *charValue,
+                                               uint32_t charValueLen)
 {
     CAResult_t result = CA_SEND_FAILED;
-    OIC_LOG(DEBUG, TAG, "IN");
     VERIFY_NON_NULL(address, TAG, "env is null");
     VERIFY_NON_NULL(charValue, TAG, "device is null");
 
     if (address)
     {
-        OIC_LOG(DEBUG, TAG, "CALEServerSendUnicastData");
         result = CALEServerSendUnicastMessage(address, charValue, charValueLen);
     }
-
-    OIC_LOG(DEBUG, TAG, "OUT");
 
     return result;
 }
 
-CAResult_t CAUpdateCharacteristicsToAllGattClients(const char *charValue,
+CAResult_t CAUpdateCharacteristicsToAllGattClients(const uint8_t *charValue,
                                                    uint32_t charValueLen)
 {
-    OIC_LOG(DEBUG, TAG, "IN");
     VERIFY_NON_NULL(charValue, TAG, "device is null");
 
-    OIC_LOG(DEBUG, TAG, "CALEServerSendMulticastMessage");
     CAResult_t result = CALEServerSendMulticastMessage(charValue, charValueLen);
 
-    OIC_LOG(DEBUG, TAG, "OUT");
     return result;
 }
 
 void CASetLEServerThreadPoolHandle(ca_thread_pool_t handle)
 {
-    OIC_LOG(DEBUG, TAG, "IN");
-
     CALEServerInitialize(handle);
-
-    OIC_LOG(DEBUG, TAG, "OUT");
 }
 
 CAResult_t CALEServerInitMutexVaraibles()
 {
-    OIC_LOG(DEBUG, TAG, "IN");
     if (NULL == g_bleReqRespCbMutex)
     {
         g_bleReqRespCbMutex = ca_mutex_new();
@@ -2421,7 +2418,6 @@ CAResult_t CALEServerInitMutexVaraibles()
         }
     }
 
-    OIC_LOG(DEBUG, TAG, "OUT");
     return CA_STATUS_OK;
 }
 
@@ -2433,8 +2429,6 @@ CAResult_t CALEServerInitConditionVaraibles()
 
 void CALEServerTerminateMutexVaraibles()
 {
-    OIC_LOG(DEBUG, TAG, "IN");
-
     ca_mutex_free(g_bleReqRespCbMutex);
     g_bleReqRespCbMutex = NULL;
 
@@ -2443,8 +2437,6 @@ void CALEServerTerminateMutexVaraibles()
 
     ca_mutex_free(g_connectedDeviceListMutex);
     g_connectedDeviceListMutex = NULL;
-
-    OIC_LOG(DEBUG, TAG, "OUT");
 }
 
 void CALEServerTerminateConditionVaraibles()

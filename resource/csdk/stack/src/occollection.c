@@ -34,6 +34,8 @@
 #include "cJSON.h"
 #include "oic_malloc.h"
 #include "oic_string.h"
+#include "ocpayload.h"
+#include "payload_logging.h"
 
 /// Module Name
 #include <stdio.h>
@@ -42,7 +44,7 @@
 
 #include "oicgroup.h"
 
-#define TAG PCF("occollection")
+#define TAG "occollection"
 
 #define NUM_PARAM_IN_QUERY   2 // The expected number of parameters in a query
 #define NUM_FIELDS_IN_QUERY  2 // The expected number of fields in a query
@@ -97,10 +99,12 @@ ValidateQuery (const char *query, OCResourceHandle resource,
     //TODO: Query and URL validation is being done for virtual resource case
     // using ValidateUrlQuery function. We should be able to merge it with this
     // function.
-    OC_LOG(INFO, TAG, PCF("Entering ValidateQuery"));
+    OC_LOG(INFO, TAG, "Entering ValidateQuery");
 
     if (!query)
+    {
         return OC_STACK_ERROR;
+    }
 
     if(!ifParam || !rtParam)
     {
@@ -110,7 +114,7 @@ ValidateQuery (const char *query, OCResourceHandle resource,
     if (!(*query))
     {
         // Query string is empty
-        OC_LOG_V(INFO, TAG, PCF("Empty query string, use default IF and RT"));
+        OC_LOG(INFO, TAG, "Empty query string, use default IF and RT");
         *ifParam = STACK_IF_DEFAULT;
         *rtParam = (char *) OCGetResourceTypeName (resource, 0);
         return OC_STACK_OK;
@@ -159,6 +163,7 @@ ValidateQuery (const char *query, OCResourceHandle resource,
         }
         token = strtok_r (NULL, OC_QUERY_SEPARATOR, &endStr);
     }
+
     if (numFields > NUM_FIELDS_IN_QUERY)
     {
         // current release supports one IF value, one RT value and no other params
@@ -219,170 +224,87 @@ ValidateQuery (const char *query, OCResourceHandle resource,
     return OC_STACK_OK;
 }
 
-
-static OCStackResult BuildRootResourceJSON(OCResource *resource,
-        char * bufferPtr, uint16_t *remaining)
-{
-    OCStackResult ret = OC_STACK_ERROR;
-    cJSON *resObj = NULL;
-    char *jsonStr = NULL;
-    uint16_t jsonLen;
-
-    OC_LOG(INFO, TAG, PCF("Entering BuildRootResourceJSON"));
-    resObj = cJSON_CreateObject();
-
-    if ( ! resObj)
-    {
-        ret = OC_STACK_NO_MEMORY;
-    }
-    else if (resource)
-    {
-        cJSON_AddItemToObject (resObj, OC_RSRVD_HREF, cJSON_CreateString(resource->uri));
-        jsonStr = cJSON_PrintUnformatted (resObj);
-
-        if(!jsonStr)
-        {
-            cJSON_Delete(resObj);
-            return OC_STACK_NO_MEMORY;
-        }
-
-        jsonLen = strlen(jsonStr);
-        if (jsonLen < *remaining)
-        {
-            OICStrcpy(bufferPtr, *remaining, jsonStr);
-            *remaining -= jsonLen;
-            bufferPtr += jsonLen;
-            ret = OC_STACK_OK;
-        }
-    }
-    else
-    {
-        ret = OC_STACK_INVALID_PARAM;
-    }
-
-    cJSON_Delete (resObj);
-    OICFree(jsonStr);
-
-    return ret;
-}
-
-
 static OCStackResult
-HandleLinkedListInterface(OCEntityHandlerRequest *ehRequest, uint8_t filterOn, char *filterValue)
+HandleLinkedListInterface(OCEntityHandlerRequest *ehRequest,
+                          uint8_t filterOn,
+                          char *filterValue)
 {
+    (void)filterOn;
+    (void)filterValue;
     if(!ehRequest)
     {
         return OC_STACK_INVALID_PARAM;
     }
 
-    OCStackResult ret = OC_STACK_ERROR;
-    char jsonbuffer[MAX_RESPONSE_LENGTH] = {};
-    size_t jsonbufferLength = 0;
-    uint16_t remaining = 0;
-    char *ptr = NULL;
+    OCStackResult ret = OC_STACK_OK;
     OCResource *collResource = (OCResource *)ehRequest->resource;
 
-    ptr = jsonbuffer;
-    remaining = MAX_RESPONSE_LENGTH;
+    OCRepPayload* payload = NULL;
 
-    ret = BuildRootResourceJSON(collResource, ptr, &remaining);
-
-    if (ret == OC_STACK_OK && remaining >= (sizeof (OC_JSON_SEPARATOR) + 1))
+    if(ret == OC_STACK_OK)
     {
-        ptr += strlen((char*)ptr);
-        *ptr = OC_JSON_SEPARATOR;
-        ptr++;
-        remaining--;
-    }
-    else
-    {
-        ret = OC_STACK_ERROR;
+        ret = BuildResponseRepresentation(collResource, &payload);
     }
 
     if (ret == OC_STACK_OK)
     {
-        for  (int i = 0; i < MAX_CONTAINED_RESOURCES; i++)
+        for  (int i = 0; i < MAX_CONTAINED_RESOURCES && ret == OC_STACK_OK; i++)
         {
             OCResource* temp = collResource->rsrcResources[i];
             if (temp)
             {
-                //TODO : Update needed here to get correct connectivity type
-                //from ServerRequest data structure.
-
-                // Function will return error if not enough space in buffer.
-                ret = BuildVirtualResourceResponse(temp, filterOn, filterValue,
-                                         (char*)ptr, &remaining, CA_ADAPTER_IP);
-                if (ret != OC_STACK_OK)
-                {
-                    break;
-                }
-                ptr += strlen((char*)ptr);
-
-                // Check if we have added all resources.
-                if ((i + 1) == MAX_CONTAINED_RESOURCES)
-                {
-                    break;
-                }
-                // Add separator if more resources and enough space present.
-                if (collResource->rsrcResources[i+1] && remaining > sizeof(OC_JSON_SEPARATOR))
-                {
-                    *ptr = OC_JSON_SEPARATOR;
-                    ptr++;
-                    remaining--;
-                }
-                // No point continuing as no more space on buffer
-                // and/or no more resources.
-                else
-                {
-                    break;
-                }
-            }
-            else
-            {
-                break;
+                //TODO : Add resource type filtering once collections
+                // start supporting queries.
+                ret = BuildResponseRepresentation(temp, &payload);
             }
         }
     }
 
-    jsonbufferLength = strlen((const char *)jsonbuffer);
-    if(ret == OC_STACK_OK && jsonbufferLength)
+    if(ret == OC_STACK_OK)
     {
-        OCEntityHandlerResponse response = {};
+        OCEntityHandlerResponse response = {0};
         response.ehResult = OC_EH_OK;
-        response.payload = jsonbuffer;
-        response.payloadSize = jsonbufferLength + 1;
+        response.payload = (OCPayload*)payload;
         response.persistentBufferFlag = 0;
         response.requestHandle = (OCRequestHandle) ehRequest->requestHandle;
         response.resourceHandle = (OCResourceHandle) collResource;
         ret = OCDoResponse(&response);
     }
+    OCRepPayloadDestroy(payload);
     return ret;
 }
 
 static OCStackResult
 HandleBatchInterface(OCEntityHandlerRequest *ehRequest)
 {
-    OCStackResult stackRet = OC_STACK_ERROR;
+    if (!ehRequest)
+    {
+        return OC_STACK_INVALID_PARAM;
+    }
+
+    OCStackResult stackRet = OC_STACK_OK;
     OCEntityHandlerResult ehResult = OC_EH_ERROR;
-    char jsonbuffer[MAX_RESPONSE_LENGTH] = {0};
-    size_t jsonbufferLength = 0;
-    uint16_t remaining = 0;
-    char * ptr = NULL;
     OCResource * collResource = (OCResource *) ehRequest->resource;
 
-    ptr = jsonbuffer;
-    remaining = MAX_RESPONSE_LENGTH;
-
-    stackRet = BuildRootResourceJSON(collResource, ptr, &remaining);
-    ptr += strlen((char*)ptr);
-
-    jsonbufferLength = strlen((const char *)jsonbuffer);
-    if(jsonbufferLength)
+    OCRepPayload* payload = OCRepPayloadCreate();
+    if(!payload)
     {
-        OCEntityHandlerResponse response = {};
+        stackRet = OC_STACK_NO_MEMORY;
+    }
+
+    if(stackRet == OC_STACK_OK)
+    {
+        if (collResource)
+        {
+            OCRepPayloadSetUri(payload, collResource->uri);
+        }
+    }
+
+    if(stackRet == OC_STACK_OK)
+    {
+        OCEntityHandlerResponse response = {0};
         response.ehResult = OC_EH_OK;
-        response.payload = jsonbuffer;
-        response.payloadSize = jsonbufferLength + 1;
+        response.payload = (OCPayload*)payload;
         response.persistentBufferFlag = 0;
         response.requestHandle = (OCRequestHandle) ehRequest->requestHandle;
         response.resourceHandle = (OCResourceHandle) collResource;
@@ -391,7 +313,7 @@ HandleBatchInterface(OCEntityHandlerRequest *ehRequest)
 
     if (stackRet == OC_STACK_OK)
     {
-        for  (int i = 0; i < MAX_CONTAINED_RESOURCES; i++)
+        for  (uint8_t i = 0; i < MAX_CONTAINED_RESOURCES; i++)
         {
             OCResource* temp = collResource->rsrcResources[i];
             if (temp)
@@ -413,7 +335,7 @@ HandleBatchInterface(OCEntityHandlerRequest *ehRequest)
                 // as slow response
                 if(ehResult == OC_EH_SLOW)
                 {
-                    OC_LOG(INFO, TAG, PCF("This is a slow resource"));
+                    OC_LOG(INFO, TAG, "This is a slow resource");
                     ((OCServerRequest *)ehRequest->requestHandle)->slowFlag = 1;
                     stackRet = EntityHandlerCodeToOCStackCode(ehResult);
                 }
@@ -433,7 +355,7 @@ uint8_t GetNumOfResourcesInCollection (OCResource *resource)
     if(resource)
     {
         uint8_t num = 0;
-        for (int i = 0; i < MAX_CONTAINED_RESOURCES; i++)
+        for (uint8_t i = 0; i < MAX_CONTAINED_RESOURCES; i++)
         {
             if (resource->rsrcResources[i])
             {
@@ -476,104 +398,101 @@ OCStackResult DefaultCollectionEntityHandler (OCEntityHandlerFlag flag,
         return result;
     }
 
-    if(!((ehRequest->method == OC_REST_GET) ||
-        (ehRequest->method == OC_REST_PUT) ||
-        (ehRequest->method == OC_REST_POST)))
+    switch (ehRequest->method)
     {
-        return OC_STACK_ERROR;
-    }
-
-    if (ehRequest->method == OC_REST_GET)
-    {
-        switch (ifQueryParam)
-        {
-            case STACK_IF_DEFAULT:
-                // Get attributes of collection resource and properties of contined resource
-                // M1 release does not support attributes for collection resource, so the GET
-                // operation is same as the GET on LL interface.
-                OC_LOG(INFO, TAG, PCF("STACK_IF_DEFAULT"));
-                return HandleLinkedListInterface(ehRequest, STACK_RES_DISCOVERY_NOFILTER, NULL);
-
-            case STACK_IF_LL:
-                OC_LOG(INFO, TAG, PCF("STACK_IF_LL"));
-                return HandleLinkedListInterface(ehRequest, STACK_RES_DISCOVERY_NOFILTER, NULL);
-
-            case STACK_IF_BATCH:
-                OC_LOG(INFO, TAG, PCF("STACK_IF_BATCH"));
-                ((OCServerRequest *)ehRequest->requestHandle)->ehResponseHandler =
-                                                                        HandleAggregateResponse;
-                ((OCServerRequest *)ehRequest->requestHandle)->numResponses =
-                        GetNumOfResourcesInCollection((OCResource *)ehRequest->resource) + 1;
-                return HandleBatchInterface(ehRequest);
-            case STACK_IF_GROUP:
-                return BuildCollectionGroupActionJSONResponse(OC_REST_GET/*flag*/,
-                        (OCResource *) ehRequest->resource, ehRequest);
-            default:
-                return OC_STACK_ERROR;
-        }
-    }
-    else if (ehRequest->method == OC_REST_PUT)
-    {
-        switch (ifQueryParam)
-        {
-            case STACK_IF_DEFAULT:
-                // M1 release does not support PUT on default interface
-                return OC_STACK_ERROR;
-
-            case STACK_IF_LL:
-                // LL interface only supports GET
-                return OC_STACK_ERROR;
-
-            case STACK_IF_BATCH:
-                ((OCServerRequest *)ehRequest->requestHandle)->ehResponseHandler =
-                                                                        HandleAggregateResponse;
-                ((OCServerRequest *)ehRequest->requestHandle)->numResponses =
-                        GetNumOfResourcesInCollection((OCResource *)ehRequest->resource) + 1;
-                return HandleBatchInterface(ehRequest);
-
-            case STACK_IF_GROUP:
+        case OC_REST_GET:
+            switch (ifQueryParam)
             {
-                OC_LOG_V(INFO, TAG, "IF_COLLECTION PUT with request ::\n%s\n ",
-                        ehRequest->reqJSONPayload);
-                return BuildCollectionGroupActionJSONResponse(OC_REST_PUT/*flag*/,
-                        (OCResource *) ehRequest->resource, ehRequest);
-            }
-            default:
-                return OC_STACK_ERROR;
-        }
-    }
-    else if (ehRequest->method == OC_REST_POST)
-    {
+                case STACK_IF_DEFAULT:
+                    // Get attributes of collection resource and properties of contained resources
+                    // M1 release does not support attributes for collection resource, so the GET
+                    // operation is same as the GET on LL interface.
+                    OC_LOG(INFO, TAG, "STACK_IF_DEFAULT");
+                    return HandleLinkedListInterface(ehRequest, STACK_RES_DISCOVERY_NOFILTER, NULL);
 
-        switch (ifQueryParam)
-        {
-            case STACK_IF_GROUP:
+                case STACK_IF_LL:
+                    OC_LOG(INFO, TAG, "STACK_IF_LL");
+                    return HandleLinkedListInterface(ehRequest, STACK_RES_DISCOVERY_NOFILTER, NULL);
+
+                case STACK_IF_BATCH:
+                    OC_LOG(INFO, TAG, "STACK_IF_BATCH");
+                    ((OCServerRequest *)ehRequest->requestHandle)->ehResponseHandler =
+                                                                            HandleAggregateResponse;
+
+                    ((OCServerRequest *)ehRequest->requestHandle)->numResponses =
+                            GetNumOfResourcesInCollection((OCResource *)ehRequest->resource) + 1;
+
+                    return HandleBatchInterface(ehRequest);
+
+                case STACK_IF_GROUP:
+                    return BuildCollectionGroupActionCBORResponse(OC_REST_GET/*flag*/,
+                            (OCResource *) ehRequest->resource, ehRequest);
+
+                default:
+                    return OC_STACK_ERROR;
+            }
+
+        case OC_REST_PUT:
+            switch (ifQueryParam)
             {
-                OC_LOG_V(INFO, TAG, "IF_COLLECTION POST with request :: \n%s\n ",
-                        ehRequest->reqJSONPayload);
-                return BuildCollectionGroupActionJSONResponse(OC_REST_POST/*flag*/,
-                        (OCResource *) ehRequest->resource, ehRequest);
-            }
-            default:
-                return OC_STACK_ERROR;
-        }
-    }
-    else if (ehRequest->method == OC_REST_POST)
-    {
+                case STACK_IF_DEFAULT:
+                    // M1 release does not support PUT on default interface
+                    return OC_STACK_ERROR;
 
-        if(ifQueryParam == STACK_IF_GROUP)
-        {
-            OC_LOG_V(INFO, TAG, "IF_COLLECTION POST with request :: \n%s\n ",
-                    ehRequest->reqJSONPayload);
-            return BuildCollectionGroupActionJSONResponse(OC_REST_POST/*flag*/,
-                    (OCResource *) ehRequest->resource, ehRequest);
-        }
-        else
-        {
+                case STACK_IF_LL:
+                    // LL interface only supports GET
+                    return OC_STACK_ERROR;
+
+                case STACK_IF_BATCH:
+                    ((OCServerRequest *)ehRequest->requestHandle)->ehResponseHandler =
+                                                                            HandleAggregateResponse;
+                    ((OCServerRequest *)ehRequest->requestHandle)->numResponses =
+                            GetNumOfResourcesInCollection((OCResource *)ehRequest->resource) + 1;
+                    return HandleBatchInterface(ehRequest);
+
+                case STACK_IF_GROUP:
+                    OC_LOG(INFO, TAG, "IF_COLLECTION PUT with request ::\n");
+                    OC_LOG_PAYLOAD(INFO, ehRequest->payload);
+                    return BuildCollectionGroupActionCBORResponse(OC_REST_PUT/*flag*/,
+                            (OCResource *) ehRequest->resource, ehRequest);
+
+                default:
+                    return OC_STACK_ERROR;
+            }
+
+        case OC_REST_POST:
+            switch (ifQueryParam)
+            {
+                case STACK_IF_DEFAULT:
+                    // M1 release does not support POST on default interface
+                    return OC_STACK_ERROR;
+
+                case STACK_IF_LL:
+                    // LL interface only supports GET
+                    return OC_STACK_ERROR;
+
+                case STACK_IF_BATCH:
+                    ((OCServerRequest *)ehRequest->requestHandle)->ehResponseHandler =
+                                                                            HandleAggregateResponse;
+                    ((OCServerRequest *)ehRequest->requestHandle)->numResponses =
+                            GetNumOfResourcesInCollection((OCResource *)ehRequest->resource) + 1;
+                    return HandleBatchInterface(ehRequest);
+
+                case STACK_IF_GROUP:
+                    OC_LOG(INFO, TAG, "IF_COLLECTION POST with request ::\n");
+                    OC_LOG_PAYLOAD(INFO, ehRequest->payload);
+                    return BuildCollectionGroupActionCBORResponse(OC_REST_POST/*flag*/,
+                            (OCResource *) ehRequest->resource, ehRequest);
+
+                default:
+                    return OC_STACK_ERROR;
+            }
+
+        case OC_REST_DELETE:
+            // TODO implement DELETE accordingly to the desired behavior
             return OC_STACK_ERROR;
-        }
+
+        default:
+            return OC_STACK_ERROR;
     }
-    return result;
 }
-
-

@@ -78,7 +78,10 @@ public class SmokeTest extends InstrumentationTestCase {
                     public void onResourceFound(OcResource resource) {
                         Log.i(TAG, "Host: " + resource.getHost());
                         Log.i(TAG, "Server ID: " + resource.getServerId());
-                        Log.i(TAG, "Connectivity Type: " + resource.getConnectivityType());
+                        Log.i(TAG, "Connectivity Types: ");
+                        for (OcConnectivityType connectivityType : resource.getConnectivityTypeSet()) {
+                            Log.i(TAG, " " + connectivityType);
+                        }
                         signal.countDown();
                     }
                 };
@@ -96,7 +99,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event
@@ -138,7 +141,7 @@ public class SmokeTest extends InstrumentationTestCase {
                             //client
                             OcPresenceHandle presenceHandle = OcPlatform.subscribePresence(
                                     resource.getHost(),
-                                    OcConnectivityType.IPV4,
+                                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                                     presenceListener
                             );
 
@@ -162,13 +165,13 @@ public class SmokeTest extends InstrumentationTestCase {
                     resourceType,
                     OcPlatform.DEFAULT_INTERFACE,
                     entityHandler,
-                    EnumSet.of(ResourceProperty.DISCOVERABLE)
+                    EnumSet.of(ResourceProperty.DISCOVERABLE, ResourceProperty.OBSERVABLE)
             );
 
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //server
@@ -223,12 +226,11 @@ public class SmokeTest extends InstrumentationTestCase {
                 if (ex instanceof OcException) {
                     OcException ocEx = (OcException) ex;
                     ErrorCode errCode = ocEx.getErrorCode();
-                    if(ErrorCode.NO_RESOURCE != errCode){
+                    if (ErrorCode.NO_RESOURCE != errCode) {
                         Log.e(TAG, ocEx.getMessage());
                         assertTrue(false);
                     }
-                }
-                else{
+                } else {
                     Log.e(TAG, ex.getMessage());
                     assertTrue(false);
                 }
@@ -246,7 +248,7 @@ public class SmokeTest extends InstrumentationTestCase {
                         ocResourceList.add(resource);
                         try {
                             resource.get(queryParamsMap, onGetListener);
-                            //TODO there is a bug in the stack that prevents the usage of the following APIs
+//                            TODO there is a bug in the stack that prevents the usage of the following APIs
 //                            resource.get(resourceType, OcPlatform.DEFAULT_INTERFACE, queryParamsMap,
 //                                    onGetListener);
 //
@@ -289,11 +291,11 @@ public class SmokeTest extends InstrumentationTestCase {
                                     case GET:
                                         Map<String, String> queryParams =
                                                 ocResourceRequest.getQueryParameters();
-//TODO after the merge with CA, the query params are missing
-//                                        if (!(queryParams.containsKey(someKey) &&
-//                                                someValue.equals(queryParams.get(someKey)))) {
-//                                            assertTrue(false);
-//                                        }
+
+                                        if (!(queryParams.containsKey(someKey) &&
+                                                someValue.equals(queryParams.get(someKey)))) {
+                                            assertTrue(false);
+                                        }
 
                                         ocResourceResponse.setErrorCode(200);
                                         ocResourceResponse.setResponseResult(EntityHandlerResult.OK);
@@ -320,7 +322,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource(null,
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event
@@ -370,12 +372,11 @@ public class SmokeTest extends InstrumentationTestCase {
                 if (ex instanceof OcException) {
                     OcException ocEx = (OcException) ex;
                     ErrorCode errCode = ocEx.getErrorCode();
-                    if(ErrorCode.NO_RESOURCE != errCode){
+                    if (ErrorCode.NO_RESOURCE != errCode) {
                         Log.e(TAG, ocEx.getMessage());
                         assertTrue(false);
                     }
-                }
-                else{
+                } else {
                     Log.e(TAG, ex.getMessage());
                     assertTrue(false);
                 }
@@ -412,12 +413,11 @@ public class SmokeTest extends InstrumentationTestCase {
                                             if (ex instanceof OcException) {
                                                 OcException ocEx = (OcException) ex;
                                                 ErrorCode errCode = ocEx.getErrorCode();
-                                                if(ErrorCode.NO_RESOURCE != errCode){
+                                                if (ErrorCode.NO_RESOURCE != errCode) {
                                                     Log.e(TAG, ocEx.getMessage());
                                                     assertTrue(false);
                                                 }
-                                            }
-                                            else{
+                                            } else {
                                                 Log.e(TAG, ex.getMessage());
                                                 assertTrue(false);
                                             }
@@ -495,7 +495,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event
@@ -545,12 +545,11 @@ public class SmokeTest extends InstrumentationTestCase {
                 if (ex instanceof OcException) {
                     OcException ocEx = (OcException) ex;
                     ErrorCode errCode = ocEx.getErrorCode();
-                    if(ErrorCode.NO_RESOURCE != errCode){
+                    if (ErrorCode.NO_RESOURCE != errCode) {
                         Log.e(TAG, ocEx.getMessage());
                         assertTrue(false);
                     }
-                }
-                else{
+                } else {
                     Log.e(TAG, ex.getMessage());
                     assertTrue(false);
                 }
@@ -587,12 +586,11 @@ public class SmokeTest extends InstrumentationTestCase {
                                             if (ex instanceof OcException) {
                                                 OcException ocEx = (OcException) ex;
                                                 ErrorCode errCode = ocEx.getErrorCode();
-                                                if(ErrorCode.NO_RESOURCE != errCode){
+                                                if (ErrorCode.NO_RESOURCE != errCode) {
                                                     Log.e(TAG, ocEx.getMessage());
                                                     assertTrue(false);
                                                 }
-                                            }
-                                            else{
+                                            } else {
                                                 Log.e(TAG, ex.getMessage());
                                                 assertTrue(false);
                                             }
@@ -673,7 +671,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event
@@ -709,12 +707,11 @@ public class SmokeTest extends InstrumentationTestCase {
                 if (ex instanceof OcException) {
                     OcException ocEx = (OcException) ex;
                     ErrorCode errCode = ocEx.getErrorCode();
-                    if(ErrorCode.NO_RESOURCE != errCode){
+                    if (ErrorCode.NO_RESOURCE != errCode) {
                         Log.e(TAG, ocEx.getMessage());
                         assertTrue(false);
                     }
-                }
-                else{
+                } else {
                     Log.e(TAG, ex.getMessage());
                     assertTrue(false);
                 }
@@ -783,7 +780,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event
@@ -961,7 +958,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event
@@ -998,12 +995,8 @@ public class SmokeTest extends InstrumentationTestCase {
         };
 
         OcPlatformInfo platformInfo = null;
-        try {
-            platformInfo = new OcPlatformInfo("myPlatformID", "myManuName", "myManuUrl");
-        } catch (OcException e) {
-            Log.e(TAG, "Could not construct platformInfo. " + e.getMessage());
-            assertTrue(false);
-        }
+
+        platformInfo = new OcPlatformInfo("myPlatformID", "myManuName", "myManuUrl");
 
         platformInfo.setModelNumber("myModelNumber");
         platformInfo.setDateOfManufacture("myDateOfManufacture");
@@ -1016,14 +1009,13 @@ public class SmokeTest extends InstrumentationTestCase {
 
         try {
             //server
-
             OcPlatform.registerPlatformInfo(platformInfo);
 
             //client
             OcPlatform.getPlatformInfo(
                     "",
-                    OcPlatform.MULTICAST_PREFIX + "/oic/p",
-                    OcConnectivityType.IPV4,
+                    OcPlatform.WELL_KNOWN_PLATFORM_QUERY,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     platformFoundListener);
 
             //wait for onPlatformFound event
@@ -1034,62 +1026,48 @@ public class SmokeTest extends InstrumentationTestCase {
         }
     }
 
-//    public void testRegisterDeviceInfoGetDeviceInfo() throws InterruptedException {
-//        final String resourceType = "unit.test.resource" + new Date().getTime();
-//        final CountDownLatch signal = new CountDownLatch(1);
-//
-//        OcPlatform.OnDeviceFoundListener deviceFoundListener = new OcPlatform.OnDeviceFoundListener() {
-//            @Override
-//            public void onDeviceFound(OcRepresentation ocRepresentation) {
-//                try {
-//                    Log.i(TAG, "Device Name: " + ocRepresentation.getValue("n"));
-//                } catch (OcException e) {
-//                    Log.e(TAG, e.toString());
-//                    assertTrue(false);
-//                }
-//                boolean hasDeviceNameAtr = ocRepresentation.hasAttribute("n");
-//                assertTrue(hasDeviceNameAtr);
-//                boolean hasNonExistingAtr = ocRepresentation.hasAttribute("NonExisting");
-//                assertFalse(hasNonExistingAtr);
-//                Log.i(TAG, "URI: " + ocRepresentation.getUri());
-//                signal.countDown();
-//            }
-//        };
-//
-//        OcDeviceInfo devInfo = new OcDeviceInfo();
-//
-//        devInfo.setContentType("myContentType");
-//        devInfo.setDateOfManufacture("myDateOfManufacture");
-//        devInfo.setDeviceName("myDeviceName");
-//        devInfo.setDeviceUuid("myDeviceUUID");
-//        devInfo.setFirmwareVersion("myFirmwareVersion");
-//        devInfo.setHostName("myHostName");
-//        devInfo.setManufacturerName("myManufacturerNa");
-//        devInfo.setManufacturerUrl("myManufacturerUrl");
-//        devInfo.setModelNumber("myModelNumber");
-//        devInfo.setPlatformVersion("myPlatformVersion");
-//        devInfo.setSupportUrl("mySupportUrl");
-//        devInfo.setVersion("myVersion");
-//
-//        try {
-//            //server
-//            OcPlatform.registerDeviceInfo(devInfo);
-//
-//            //client
-//            OcPlatform.getDeviceInfo(
-//                    "",
-//                      OcPlatform.MULTICAST_PREFIX + DEVICE_URI,
-//                    OcConnectivityType.IPV4,
-//                    deviceFoundListener);
-//
-//            //wait for onDeviceFound event
-//            assertTrue(signal.await(60, TimeUnit.SECONDS));
-//
-//        } catch (OcException e) {
-//            Log.e(TAG, e.getMessage());
-//            assertTrue(false);
-//        }
-//    }
+    public void testRegisterDeviceInfoGetDeviceInfo() throws InterruptedException {
+        final String resourceType = "unit.test.resource" + new Date().getTime();
+        final CountDownLatch signal = new CountDownLatch(1);
+
+        OcPlatform.OnDeviceFoundListener deviceFoundListener = new OcPlatform.OnDeviceFoundListener() {
+            @Override
+            public void onDeviceFound(OcRepresentation ocRepresentation) {
+                try {
+                    Log.i(TAG, "Device Name: " + ocRepresentation.getValue("n"));
+                } catch (OcException e) {
+                    Log.e(TAG, e.toString());
+                    assertTrue(false);
+                }
+                boolean hasDeviceNameAtr = ocRepresentation.hasAttribute("n");
+                assertTrue(hasDeviceNameAtr);
+                boolean hasNonExistingAtr = ocRepresentation.hasAttribute("NonExisting");
+                assertFalse(hasNonExistingAtr);
+                Log.i(TAG, "URI: " + ocRepresentation.getUri());
+                signal.countDown();
+            }
+        };
+
+        OcDeviceInfo devInfo = new OcDeviceInfo("myDeviceName");
+
+        try {
+            //server
+            OcPlatform.registerDeviceInfo(devInfo);
+            //client
+            OcPlatform.getDeviceInfo(
+                    "",
+                    OcPlatform.WELL_KNOWN_DEVICE_QUERY,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
+                    deviceFoundListener);
+
+            //wait for onDeviceFound event
+            assertTrue(signal.await(60, TimeUnit.SECONDS));
+
+        } catch (OcException e) {
+            Log.e(TAG, e.getMessage());
+            assertTrue(false);
+        }
+    }
 
     public void testBindUnbindResources() throws InterruptedException {
         final String resourceType = "unit.test.resource" + new Date().getTime();
@@ -1179,7 +1157,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener1);
 
             //wait for onResourceFound event to find 3 registered resources
@@ -1192,7 +1170,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener3);
 
             //wait for onResourceFound event to find 1 collection resources
@@ -1204,7 +1182,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener2);
 
             //wait for onResourceFound event to find 2 resources
@@ -1216,7 +1194,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener4);
 
             //wait for onResourceFound event to find 3 registered resources
@@ -1231,7 +1209,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener6);
 
             //wait for onResourceFound event to find 1 collection resources
@@ -1242,7 +1220,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener5);
 
             //wait for onResourceFound event to find 1 collection resources
@@ -1263,28 +1241,23 @@ public class SmokeTest extends InstrumentationTestCase {
         final String resourceType2 = "unit.test.resource" + new Date().getTime();
 
         final CountDownLatch signal = new CountDownLatch(2);
-        final List<OcResource> resourceList = new LinkedList<OcResource>();
-
-        OcPlatform.EntityHandler entityHandler = new OcPlatform.EntityHandler() {
-            @Override
-            public EntityHandlerResult handleEntity(OcResourceRequest ocResourceRequest) {
-                return EntityHandlerResult.OK;
-            }
-        };
+        final List<OcResource> resourceList = new LinkedList<>();
 
         OcPlatform.OnResourceFoundListener resourceFoundListener =
                 new OcPlatform.OnResourceFoundListener() {
                     @Override
-                    public void onResourceFound(OcResource resource) {
+                    public synchronized void onResourceFound(OcResource resource) {
                         resourceList.add(resource);
                         Log.i(TAG, "Host: " + resource.getHost());
                         Log.i(TAG, "Uri: " + resource.getUri());
                         Log.i(TAG, "Observable: " + resource.isObservable());
 
+                        assertFalse(resource.getResourceTypes().isEmpty());
                         for (String resourceType : resource.getResourceTypes()) {
                             Log.i(TAG, "Type: " + resourceType);
                         }
 
+                        assertFalse(resource.getResourceTypes().isEmpty());
                         for (String resourceInterface : resource.getResourceInterfaces()) {
                             Log.i(TAG, "Interface: " + resourceInterface);
                         }
@@ -1292,7 +1265,6 @@ public class SmokeTest extends InstrumentationTestCase {
                         List<OcHeaderOption> headerOptionList = new LinkedList<OcHeaderOption>();
                         headerOptionList.add(new OcHeaderOption(2885, "OptionData1"));
                         headerOptionList.add(new OcHeaderOption(2886, "OptionData2"));
-                        resource.setHeaderOptions(headerOptionList);
 
                         resource.setHeaderOptions(headerOptionList);
                         resource.unsetHeaderOptions();
@@ -1311,7 +1283,7 @@ public class SmokeTest extends InstrumentationTestCase {
                     "/a/unittest1",
                     resourceType1,
                     OcPlatform.DEFAULT_INTERFACE,
-                    entityHandler,
+                    null,
                     EnumSet.of(ResourceProperty.DISCOVERABLE)
             );
 
@@ -1319,19 +1291,19 @@ public class SmokeTest extends InstrumentationTestCase {
                     "/a/unittest2",
                     resourceType2,
                     OcPlatform.DEFAULT_INTERFACE,
-                    entityHandler,
+                    null,
                     EnumSet.of(ResourceProperty.DISCOVERABLE)
             );
 
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType1,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType2,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event
@@ -1358,13 +1330,6 @@ public class SmokeTest extends InstrumentationTestCase {
         final String resourceType = "unit.test.resource" + new Date().getTime();
         final CountDownLatch signal = new CountDownLatch(1);
 
-        OcPlatform.EntityHandler entityHandler = new OcPlatform.EntityHandler() {
-            @Override
-            public EntityHandlerResult handleEntity(OcResourceRequest ocResourceRequest) {
-                return EntityHandlerResult.OK;
-            }
-        };
-
         OcPlatform.OnResourceFoundListener resourceFoundListener =
                 new OcPlatform.OnResourceFoundListener() {
                     @Override
@@ -1375,7 +1340,7 @@ public class SmokeTest extends InstrumentationTestCase {
                             OcResource resourceProxy = OcPlatform.constructResourceObject(
                                     resource.getHost(),
                                     resource.getUri(),
-                                    OcConnectivityType.IPV4,
+                                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                                     resource.isObservable(),
                                     resource.getResourceTypes(),
                                     resource.getResourceInterfaces());
@@ -1398,14 +1363,14 @@ public class SmokeTest extends InstrumentationTestCase {
                     "/a/unittest",
                     resourceType,
                     OcPlatform.DEFAULT_INTERFACE,
-                    entityHandler,
+                    null,
                     EnumSet.of(ResourceProperty.DISCOVERABLE)
             );
 
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event
@@ -1425,14 +1390,14 @@ public class SmokeTest extends InstrumentationTestCase {
                     "/a/unittest",
                     resourceType,
                     OcPlatform.DEFAULT_INTERFACE,
-                    entityHandler,
+                    null,
                     EnumSet.of(ResourceProperty.DISCOVERABLE)
             );
 
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event
@@ -1604,7 +1569,7 @@ public class SmokeTest extends InstrumentationTestCase {
             //client
             OcPlatform.findResource("",
                     OcPlatform.WELL_KNOWN_QUERY + "?rt=" + resourceType,
-                    OcConnectivityType.IPV4,
+                    EnumSet.of(OcConnectivityType.CT_DEFAULT),
                     resourceFoundListener);
 
             //wait for onResourceFound event

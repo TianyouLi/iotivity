@@ -67,7 +67,7 @@ int observe_count()
     return ++oc;
 }
 
-void onObserve(const HeaderOptions headerOptions, const OCRepresentation& rep,
+void onObserve(const HeaderOptions /*headerOptions*/, const OCRepresentation& rep,
                     const int& eCode, const int& sequenceNumber)
 {
     if(eCode == SUCCESS_RESPONSE)
@@ -97,7 +97,7 @@ void onObserve(const HeaderOptions headerOptions, const OCRepresentation& rep,
         std::cout << "\tpower: " << mylight.m_power << std::endl;
         std::cout << "\tname: " << mylight.m_name << std::endl;
 
-        if(observe_count() > 10)
+        if(observe_count() == 11)
         {
             std::cout<<"Cancelling Observe..."<<std::endl;
             OCStackResult result = curResource->cancelObserve(OC::QualityOfService::HighQos);
@@ -112,7 +112,7 @@ void onObserve(const HeaderOptions headerOptions, const OCRepresentation& rep,
     }
 }
 
-void onPost2(const HeaderOptions& headerOptions, const OCRepresentation& rep, const int eCode)
+void onPost2(const HeaderOptions& /*headerOptions*/, const OCRepresentation& rep, const int eCode)
 {
     if(eCode == SUCCESS_RESPONSE)
     {
@@ -150,7 +150,8 @@ void onPost2(const HeaderOptions& headerOptions, const OCRepresentation& rep, co
     }
 }
 
-void onPost(const HeaderOptions& headerOptions, const OCRepresentation& rep, const int eCode)
+void onPost(const HeaderOptions& /*headerOptions*/,
+        const OCRepresentation& rep, const int eCode)
 {
     if(eCode == SUCCESS_RESPONSE)
     {
@@ -212,7 +213,7 @@ void postLightRepresentation(std::shared_ptr<OCResource> resource)
 }
 
 // callback handler on PUT request
-void onPut(const HeaderOptions& headerOptions, const OCRepresentation& rep, const int eCode)
+void onPut(const HeaderOptions& /*headerOptions*/, const OCRepresentation& rep, const int eCode)
 {
     if(eCode == SUCCESS_RESPONSE)
     {
@@ -256,7 +257,7 @@ void putLightRepresentation(std::shared_ptr<OCResource> resource)
 }
 
 // Callback handler on GET request
-void onGet(const HeaderOptions& headerOptions, const OCRepresentation& rep, const int eCode)
+void onGet(const HeaderOptions& /*headerOptions*/, const OCRepresentation& rep, const int eCode)
 {
     if(eCode == SUCCESS_RESPONSE)
     {
@@ -374,8 +375,7 @@ void PrintUsage()
     std::cout << "   ObserveType : 1 - Observe" << std::endl;
     std::cout << "   ObserveType : 2 - ObserveAll" << std::endl;
     std::cout << "   ConnectivityType: Default IP" << std::endl;
-    std::cout << "   ConnectivityType : 0 - IPv4"<< std::endl;
-    std::cout << "   ConnectivityType : 0 - IPv6 (Current Not Supported )"<< std::endl;
+    std::cout << "   ConnectivityType : 0 - IP"<< std::endl;
 }
 
 int main(int argc, char* argv[]) {
@@ -408,16 +408,8 @@ int main(int argc, char* argv[]) {
                 {
                     if(optionSelected == 0)
                     {
-                        std::cout << "Using IPv4."<< std::endl;
-                        connectivityType = CT_IP_USE_V4;
-                    }
-                    else if(optionSelected == 1)
-                    {
-                        std::cout << "IPv6 is currently not supported."<< std::endl;
-                        PrintUsage();
-                        return -1;
-                        //TODO: printUsage to be removed when IPv6 is available.
-                        //connectivityType = CT_IP_USE_V6;
+                        std::cout << "Using IP."<< std::endl;
+                        connectivityType = CT_ADAPTER_IP;
                     }
                     else
                     {
@@ -438,7 +430,7 @@ int main(int argc, char* argv[]) {
             return -1;
         }
     }
-    catch(std::exception& e)
+    catch(std::exception&)
     {
         std::cout << "Invalid input argument." << std::endl;
         PrintUsage();
@@ -460,7 +452,7 @@ int main(int argc, char* argv[]) {
     try
     {
         // Find all resources
-        requestURI << OC_MULTICAST_DISCOVERY_URI << "?rt=core.light";
+        requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt=core.light";
 
         OCPlatform::findResource("", requestURI.str(),
                 connectivityType, &foundResource, OC::QualityOfService::LowQos);

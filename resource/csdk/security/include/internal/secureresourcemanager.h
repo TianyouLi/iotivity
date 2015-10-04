@@ -21,6 +21,8 @@
 #ifndef SECURITYRESOURCEMANAGER_H_
 #define SECURITYRESOURCEMANAGER_H_
 
+#include "securevirtualresourcetypes.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -78,6 +80,36 @@ OCStackResult SRMInitPolicyEngine();
  * @return  none
  */
 void SRMDeInitPolicyEngine();
+
+/**
+ * @brief   Provisioning API response callback.
+ * @param object[IN]       endpoint instance.
+ * @param responseInfo[IN] instance of CAResponseInfo_t structure.
+ * @return true if received response is for provisioning API false otherwise.
+ */
+typedef bool (*SPResponseCallback) (const CAEndpoint_t *object,
+                                    const CAResponseInfo_t *responseInfo);
+
+/**
+ * @brief function to register provisoning API's response callback.
+ * @param respHandler response handler callback.
+ */
+void SRMRegisterProvisioningResponseHandler(SPResponseCallback respHandler);
+
+/**
+ * @brief   Check the security resource URI.
+ * @param   uri [IN] Pointers to security resource URI.
+ * @return  true if the URI is one of security resources, otherwise false.
+ */
+bool SRMIsSecurityResourceURI(const char* uri);
+
+/**
+ * @brief   Sends Response
+ * @param   resposeVal       SRMAccessResponse_t value
+ * @return  NONE
+ */
+void SRMSendResponse(SRMAccessResponse_t responseVal);
+
 
 #ifdef __cplusplus
 }

@@ -23,6 +23,7 @@
 
 #include "logger.h"
 #include "ocstack.h"
+#include "ocpayload.h"
 #include <string.h>
 
 #ifdef ARDUINOWIFI
@@ -43,7 +44,7 @@
 
 const char *getResult(OCStackResult result);
 
-PROGMEM const char TAG[] = "ArduinoServer";
+#define TAG "ArduinoServer"
 
 int gLightUnderObservation = 0;
 void createLightResource();
@@ -56,9 +57,6 @@ typedef struct LIGHTRESOURCE{
 } LightResource;
 
 static LightResource Light;
-
-static char responsePayloadGet[] = "{\"href\":\"/a/light\",\"rep\":{\"state\":true,\"power\":10}}";
-static char responsePayloadPut[] = "{\"href\":\"/a/light\",\"rep\":{\"state\":false,\"power\":0}}";
 
 #ifdef ARDUINOWIFI
 // Arduino WiFi Shield
@@ -81,7 +79,7 @@ int ConnectToNetwork()
     // check for the presence of the shield:
     if (WiFi.status() == WL_NO_SHIELD)
     {
-        OC_LOG(ERROR, TAG, PCF("WiFi shield not present"));
+        OC_LOG(ERROR, TAG, ("WiFi shield not present"));
         return -1;
     }
 
@@ -90,7 +88,7 @@ int ConnectToNetwork()
     OC_LOG_V(INFO, TAG, "WiFi Shield Firmware version %s", fwVersion);
     if ( strncmp(fwVersion, ARDUINO_WIFI_SHIELD_UDP_FW_VER, sizeof(ARDUINO_WIFI_SHIELD_UDP_FW_VER)) !=0 )
     {
-        OC_LOG(DEBUG, TAG, PCF("!!!!! Upgrade WiFi Shield Firmware version !!!!!!"));
+        OC_LOG(DEBUG, TAG, ("!!!!! Upgrade WiFi Shield Firmware version !!!!!!"));
         return -1;
     }
 
@@ -103,7 +101,7 @@ int ConnectToNetwork()
         // wait 10 seconds for connection:
         delay(10000);
     }
-    OC_LOG(DEBUG, TAG, PCF("Connected to wifi"));
+    OC_LOG(DEBUG, TAG, ("Connected to wifi"));
 
     IPAddress ip = WiFi.localIP();
     OC_LOG_V(INFO, TAG, "IP Address:  %d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
@@ -154,36 +152,29 @@ OCEntityHandlerResult OCEntityHandlerCb(OCEntityHandlerFlag flag, OCEntityHandle
 {
     OCEntityHandlerResult ehRet = OC_EH_OK;
     OCEntityHandlerResponse response = {0};
-    char payload[MAX_RESPONSE_LENGTH] = {0};
+    OCRepPayload* payload = OCRepPayloadCreate();
+    if(!payload)
+    {
+        OC_LOG(ERROR, TAG, ("Failed to allocate Payload"));
+        return OC_EH_ERROR;
+    }
 
     if(entityHandlerRequest && (flag & OC_REQUEST_FLAG))
     {
-        OC_LOG (INFO, TAG, PCF("Flag includes OC_REQUEST_FLAG"));
+        OC_LOG (INFO, TAG, ("Flag includes OC_REQUEST_FLAG"));
 
         if(OC_REST_GET == entityHandlerRequest->method)
         {
-            size_t responsePayloadGetLength = strlen(responsePayloadGet);
-            if (responsePayloadGetLength < (sizeof(payload) - 1))
-            {
-                strncpy(payload, responsePayloadGet, responsePayloadGetLength);
-            }
-            else
-            {
-                ehRet = OC_EH_ERROR;
-            }
+            OCRepPayloadSetUri(payload, "/a/light");
+            OCRepPayloadSetPropBool(payload, "state", true);
+            OCRepPayloadSetPropInt(payload, "power", 10);
         }
         else if(OC_REST_PUT == entityHandlerRequest->method)
         {
             //Do something with the 'put' payload
-            size_t responsePayloadPutLength = strlen(responsePayloadPut);
-            if (responsePayloadPutLength < (sizeof(payload) - 1))
-            {
-                strncpy((char *)payload, responsePayloadPut, responsePayloadPutLength);
-            }
-            else
-            {
-                ehRet = OC_EH_ERROR;
-            }
+            OCRepPayloadSetUri(payload, "/a/light");
+            OCRepPayloadSetPropBool(payload, "state", false);
+            OCRepPayloadSetPropInt(payload, "power", 0);
         }
 
         if (ehRet == OC_EH_OK)
@@ -192,8 +183,7 @@ OCEntityHandlerResult OCEntityHandlerCb(OCEntityHandlerFlag flag, OCEntityHandle
             response.requestHandle = entityHandlerRequest->requestHandle;
             response.resourceHandle = entityHandlerRequest->resource;
             response.ehResult = ehRet;
-            response.payload = payload;
-            response.payloadSize = strlen(payload);
+            response.payload = (OCPayload*) payload;
             response.numSendVendorSpecificHeaderOptions = 0;
             memset(response.sendVendorSpecificHeaderOptions, 0,
                     sizeof response.sendVendorSpecificHeaderOptions);
@@ -213,15 +203,16 @@ OCEntityHandlerResult OCEntityHandlerCb(OCEntityHandlerFlag flag, OCEntityHandle
     {
         if (OC_OBSERVE_REGISTER == entityHandlerRequest->obsInfo.action)
         {
-            OC_LOG (INFO, TAG, PCF("Received OC_OBSERVE_REGISTER from client"));
+            OC_LOG (INFO, TAG, ("Received OC_OBSERVE_REGISTER from client"));
             gLightUnderObservation = 1;
         }
         else if (OC_OBSERVE_DEREGISTER == entityHandlerRequest->obsInfo.action)
         {
-            OC_LOG (INFO, TAG, PCF("Received OC_OBSERVE_DEREGISTER from client"));
+            OC_LOG (INFO, TAG, ("Received OC_OBSERVE_DEREGISTER from client"));
+            gLightUnderObservation = 0;
         }
     }
-
+    OCRepPayloadDestroy(payload);
     return ehRet;
 }
 
@@ -255,19 +246,19 @@ void setup()
     // Add your initialization code here
     // Note : This will initialize Serial port on Arduino at 115200 bauds
     OC_LOG_INIT();
-    OC_LOG(DEBUG, TAG, PCF("OCServer is starting..."));
+    OC_LOG(DEBUG, TAG, ("OCServer is starting..."));
 
     // Connect to Ethernet or WiFi network
     if (ConnectToNetwork() != 0)
     {
-        OC_LOG(ERROR, TAG, PCF("Unable to connect to network"));
+        OC_LOG(ERROR, TAG, ("Unable to connect to network"));
         return;
     }
 
     // Initialize the OC Stack in Server mode
     if (OCInit(NULL, 0, OC_SERVER) != OC_STACK_OK)
     {
-        OC_LOG(ERROR, TAG, PCF("OCStack init error"));
+        OC_LOG(ERROR, TAG, ("OCStack init error"));
         return;
     }
 
@@ -288,7 +279,7 @@ void loop()
     // Give CPU cycles to OCStack to perform send/recv and other OCStack stuff
     if (OCProcess() != OC_STACK_OK)
     {
-        OC_LOG(ERROR, TAG, PCF("OCStack process error"));
+        OC_LOG(ERROR, TAG, ("OCStack process error"));
         return;
     }
     ChangeLightRepresentation(NULL);

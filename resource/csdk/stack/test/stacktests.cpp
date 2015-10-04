@@ -57,12 +57,18 @@ namespace itst = iotivity::test;
 //-----------------------------------------------------------------------------
 static const char TAG[] = "TestHarness";
 
+char gDeviceUUID[] = "myDeviceUUID";
+char gManufacturerName[] = "myName";
+char gTooLongManufacturerName[] = "extremelylongmanufacturername";
+char gManufacturerUrl[] = "www.foooooooooooooooo.baaaaaaaaaaaaar";
+
 std::chrono::seconds const SHORT_TEST_TIMEOUT = std::chrono::seconds(5);
 
 //-----------------------------------------------------------------------------
 // Callback functions
 //-----------------------------------------------------------------------------
-extern "C"  OCStackApplicationResult asyncDoResourcesCallback(void* ctx, OCDoHandle handle, OCClientResponse * clientResponse)
+extern "C"  OCStackApplicationResult asyncDoResourcesCallback(void* ctx,
+        OCDoHandle /*handle*/, OCClientResponse * clientResponse)
 {
     OC_LOG(INFO, TAG, "Entering asyncDoResourcesCallback");
 
@@ -79,8 +85,9 @@ extern "C"  OCStackApplicationResult asyncDoResourcesCallback(void* ctx, OCDoHan
 //-----------------------------------------------------------------------------
 // Entity handler
 //-----------------------------------------------------------------------------
-OCEntityHandlerResult entityHandler(OCEntityHandlerFlag flag, OCEntityHandlerRequest * entityHandlerRequest,
-                                    void* callbackParam)
+OCEntityHandlerResult entityHandler(OCEntityHandlerFlag /*flag*/,
+        OCEntityHandlerRequest * /*entityHandlerRequest*/,
+        void* /*callbackParam*/)
 {
     OC_LOG(INFO, TAG, "Entering entityHandler");
 
@@ -187,11 +194,28 @@ TEST(StackStart, SetPlatformInfoValid)
     itst::DeadmanTimer killSwitch(SHORT_TEST_TIMEOUT);
     EXPECT_EQ(OC_STACK_OK, OCInit("127.0.0.1", 5683, OC_SERVER));
 
-    OCPlatformInfo info = {};
-    info.platformID = (char *) "platform_id";
-    info.manufacturerName = (char *) "manufac_name";
-
+    OCPlatformInfo info =
+    {
+        gDeviceUUID,
+        gManufacturerName,
+        0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
     EXPECT_EQ(OC_STACK_OK, OCSetPlatformInfo(info));
+    EXPECT_EQ(OC_STACK_OK, OCStop());
+}
+
+TEST(StackStart, SetPlatformInfoWithClientMode)
+{
+    itst::DeadmanTimer killSwitch(SHORT_TEST_TIMEOUT);
+    EXPECT_EQ(OC_STACK_OK, OCInit("127.0.0.1", 5683, OC_CLIENT));
+
+    OCPlatformInfo info =
+    {
+        gDeviceUUID,
+        gManufacturerName,
+        0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
+    EXPECT_EQ(OC_STACK_ERROR, OCSetPlatformInfo(info));
     EXPECT_EQ(OC_STACK_OK, OCStop());
 }
 
@@ -200,8 +224,12 @@ TEST(StackStart, SetPlatformInfoWithNoPlatformID)
     itst::DeadmanTimer killSwitch(SHORT_TEST_TIMEOUT);
     EXPECT_EQ(OC_STACK_OK, OCInit("127.0.0.1", 5683, OC_SERVER));
 
-    OCPlatformInfo info = {};
-    info.manufacturerName = (char *) "manufac_name";
+    OCPlatformInfo info =
+     {
+         0,
+         gDeviceUUID,
+         0, 0, 0, 0, 0, 0, 0, 0, 0
+     };
 
     EXPECT_EQ(OC_STACK_INVALID_PARAM, OCSetPlatformInfo(info));
     EXPECT_EQ(OC_STACK_OK, OCStop());
@@ -212,8 +240,11 @@ TEST(StackStart, SetPlatformInfoWithNoManufacturerName)
     itst::DeadmanTimer killSwitch(SHORT_TEST_TIMEOUT);
     EXPECT_EQ(OC_STACK_OK, OCInit("127.0.0.1", 5683, OC_SERVER));
 
-    OCPlatformInfo info = {};
-    info.platformID = (char *) "platform_id";
+    OCPlatformInfo info =
+    {
+        gDeviceUUID,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
 
     EXPECT_EQ(OC_STACK_INVALID_PARAM, OCSetPlatformInfo(info));
     EXPECT_EQ(OC_STACK_OK, OCStop());
@@ -224,8 +255,11 @@ TEST(StackStart, SetPlatformInfoWithZeroLengthManufacturerName)
     itst::DeadmanTimer killSwitch(SHORT_TEST_TIMEOUT);
     EXPECT_EQ(OC_STACK_OK, OCInit("127.0.0.1", 5683, OC_SERVER));
 
-    OCPlatformInfo info = {};
-    info.platformID = (char *) "platform_id";
+    OCPlatformInfo info =
+    {
+        gDeviceUUID,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
     info.manufacturerName = (char *) "";
 
     EXPECT_EQ(OC_STACK_INVALID_PARAM, OCSetPlatformInfo(info));
@@ -237,9 +271,12 @@ TEST(StackStart, SetPlatformInfoWithTooLongManufacName)
     itst::DeadmanTimer killSwitch(SHORT_TEST_TIMEOUT);
     EXPECT_EQ(OC_STACK_OK, OCInit("127.0.0.1", 5683, OC_SERVER));
 
-    OCPlatformInfo info = {};
-    info.platformID = (char *) "platform_id";
-    info.manufacturerName = (char *) "extremelylongmanufacturername";
+    OCPlatformInfo info =
+    {
+        gDeviceUUID,
+        gTooLongManufacturerName,
+        0, 0, 0, 0, 0, 0, 0, 0, 0
+    };
 
     EXPECT_EQ(OC_STACK_INVALID_PARAM, OCSetPlatformInfo(info));
     EXPECT_EQ(OC_STACK_OK, OCStop());
@@ -249,16 +286,17 @@ TEST(StackStart, SetPlatformInfoWithTooLongManufacURL)
 {
     itst::DeadmanTimer killSwitch(SHORT_TEST_TIMEOUT);
     EXPECT_EQ(OC_STACK_OK, OCInit("127.0.0.1", 5683, OC_SERVER));
-
-    OCPlatformInfo info = {};
-    info.platformID = (char *) "platform_id";
-    info.manufacturerName = (char *) "extremelylongmanufacturername";
-    info.manufacturerUrl = (char *)"www.foooooooooooooooo.baaaaaaaaaaaaar";
+    OCPlatformInfo info =
+    {
+        gDeviceUUID,
+        gManufacturerName,
+        gManufacturerUrl,
+        0, 0, 0, 0, 0, 0, 0, 0
+    };
 
     EXPECT_EQ(OC_STACK_INVALID_PARAM, OCSetPlatformInfo(info));
     EXPECT_EQ(OC_STACK_OK, OCStop());
 }
-
 
 TEST(StackDiscovery, DISABLED_DoResourceDeviceDiscovery)
 {
@@ -271,7 +309,7 @@ TEST(StackDiscovery, DISABLED_DoResourceDeviceDiscovery)
 
     /* Start a discovery query*/
     char szQueryUri[64] = { 0 };
-    strcpy(szQueryUri, OC_WELL_KNOWN_QUERY);
+    strcpy(szQueryUri, OC_RSRVD_WELL_KNOWN_URI);
     cbData.cb = asyncDoResourcesCallback;
     cbData.context = (void*)DEFAULT_CONTEXT_VALUE;
     cbData.cd = NULL;
@@ -313,7 +351,7 @@ TEST(StackResource, DISABLED_UpdateResourceNullURI)
 
     /* Start a discovery query*/
     char szQueryUri[64] = { 0 };
-    strcpy(szQueryUri, OC_WELL_KNOWN_QUERY);
+    strcpy(szQueryUri, OC_RSRVD_WELL_KNOWN_URI);
     cbData.cb = asyncDoResourcesCallback;
     cbData.context = (void*)DEFAULT_CONTEXT_VALUE;
     cbData.cd = NULL;
@@ -435,8 +473,8 @@ TEST(StackResource, CreateResourceSuccessWithResourcePolicyPropNone)
                                             "core.led",
                                             "core.rw",
                                             "/a/led",
-                                            0,   
-                                            NULL,   
+                                            0,
+                                            NULL,
                                             OC_RES_PROP_NONE));// the resource is non-discoverable &
                                                 // non-observable by the client.
     const char* url = OCGetResourceUri(handle);
@@ -1481,7 +1519,7 @@ TEST(StackResourceAccess, DeleteLastResource)
     uint8_t numExpectedResources = 0;
 
     EXPECT_EQ(OC_STACK_OK, OCGetNumberOfResources(&numExpectedResources));
- 
+
     OCResourceHandle handle0;
     EXPECT_EQ(OC_STACK_OK, OCCreateResource(&handle0,
                                             "core.led",
@@ -1584,97 +1622,6 @@ TEST(StackResourceAccess, DeleteMiddleResource)
     EXPECT_STREQ("core.rw", resourceInterfaceName);
 
     EXPECT_EQ(OC_STACK_OK, OCStop());
-}
-
-
-#ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
-    void parsePresencePayload(char* payload, uint32_t* seqNum,
-            uint32_t* maxAge, OCPresenceTrigger* presenceTrigger, char** resType);
-#ifdef __cplusplus
-}
-#endif // __cplusplus
-
-TEST(StackPresence, ParsePresencePayload)
-{
-    itst::DeadmanTimer killSwitch(SHORT_TEST_TIMEOUT);
-    OC_LOG(INFO, TAG, "Starting ParsePresencePayload test");
-
-    char payload[100];
-    uint32_t seqNum = 0, maxAge = 0;
-    OCPresenceTrigger presenceTrigger = OC_PRESENCE_TRIGGER_CHANGE;
-    char * resType = NULL;
-
-    //Good Scenario
-    strncpy(payload, "{\"oic\":[{\"ttl\":99,\"non\":100,\"trg\":"
-            "\"delete\",\"rt\":\"presence\"}]}", sizeof(payload));
-    parsePresencePayload(payload, &seqNum, &maxAge,
-            &presenceTrigger, &resType);
-    EXPECT_TRUE(100 == seqNum);
-    EXPECT_TRUE(99 == maxAge);
-    EXPECT_TRUE(OC_PRESENCE_TRIGGER_DELETE == presenceTrigger);
-    EXPECT_TRUE(NULL != resType);
-    EXPECT_STREQ("presence", resType);
-    OICFree(resType);
-
-    presenceTrigger = OC_PRESENCE_TRIGGER_CHANGE;
-
-    //Bad Scenario -- should not result in Seg Fault
-    parsePresencePayload(payload, NULL, &maxAge, &presenceTrigger, &resType);
-
-    //Bad Scenario
-    seqNum = 0; maxAge = 0; resType = NULL;
-    strncpy(payload, "{abracadabra}", sizeof(payload));
-    parsePresencePayload(payload, &seqNum, &maxAge, &presenceTrigger, &resType);
-    EXPECT_TRUE(0 == seqNum);
-    EXPECT_TRUE(0 == maxAge);
-    EXPECT_TRUE(OC_PRESENCE_TRIGGER_CHANGE == presenceTrigger);
-    EXPECT_TRUE(NULL == resType);
-    EXPECT_EQ(NULL, resType);
-    OICFree(resType);
-
-    //Bad Scenario
-    seqNum = 0; maxAge = 0; resType = NULL;
-    strncpy(payload, "{\"oic\":[100]}", sizeof(payload));
-    parsePresencePayload(payload, &seqNum, &maxAge, &presenceTrigger, &resType);
-    EXPECT_TRUE(0 == seqNum);
-    EXPECT_TRUE(0 == maxAge);
-    EXPECT_TRUE(OC_PRESENCE_TRIGGER_CHANGE == presenceTrigger);
-    EXPECT_TRUE(NULL == resType);
-    EXPECT_EQ(NULL, resType);
-    OICFree(resType);
-
-    //Bad Scenario
-    seqNum = 0; maxAge = 0; resType = NULL;
-    strncpy(payload, "{\"oic\":[]}", sizeof(payload));
-    parsePresencePayload(payload, &seqNum, &maxAge, &presenceTrigger, &resType);
-    EXPECT_TRUE(0 == seqNum);
-    EXPECT_TRUE(0 == maxAge);
-    EXPECT_TRUE(OC_PRESENCE_TRIGGER_CHANGE == presenceTrigger);
-    EXPECT_TRUE(NULL == resType);
-    EXPECT_EQ(NULL, resType);
-    OICFree(resType);
-
-    //Bad Scenario
-    strncpy(payload, "{:]}", sizeof(payload));
-    parsePresencePayload(payload, &seqNum, &maxAge, &presenceTrigger, &resType);
-    EXPECT_TRUE(0 == seqNum);
-    EXPECT_TRUE(0 == maxAge);
-    EXPECT_TRUE(OC_PRESENCE_TRIGGER_CHANGE == presenceTrigger);
-    EXPECT_TRUE(NULL == resType);
-    EXPECT_EQ(NULL, resType);
-    OICFree(resType);
-
-    //Bad Scenario
-    strncpy(payload, "{:[presence}", sizeof(payload));
-    parsePresencePayload(payload, &seqNum, &maxAge, &presenceTrigger, &resType);
-    EXPECT_TRUE(0 == seqNum);
-    EXPECT_TRUE(0 == maxAge);
-    EXPECT_TRUE(OC_PRESENCE_TRIGGER_CHANGE == presenceTrigger);
-    EXPECT_TRUE(NULL == resType);
-    EXPECT_EQ(NULL, resType);
-    OICFree(resType);
 }
 
 TEST(PODTests, OCHeaderOption)

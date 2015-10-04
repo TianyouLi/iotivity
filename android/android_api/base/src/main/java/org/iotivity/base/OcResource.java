@@ -22,6 +22,7 @@
 
 package org.iotivity.base;
 
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 
@@ -33,6 +34,7 @@ import java.util.Map;
  * one or more resources.
  */
 public class OcResource {
+    public static final String CREATED_URI_KEY = "createduri";
 
     private OcResource(long nativeHandle) {
         this.mNativeHandle = nativeHandle;
@@ -45,7 +47,7 @@ public class OcResource {
      * @param onGetListener  The event handler will be invoked with a map of attribute name and
      *                       values. The event handler will also have the result from this Get
      *                       operation This will have error codes
-     * @throws OcException
+     * @throws OcException if failure
      */
     public native void get(Map<String, String> queryParamsMap,
                            OnGetListener onGetListener) throws OcException;
@@ -58,7 +60,7 @@ public class OcResource {
      *                         values. The event handler will also have the result from this Get
      *                         operation This will have error codes
      * @param qualityOfService the quality of communication
-     * @throws OcException
+     * @throws OcException if failure
      */
     public void get(Map<String, String> queryParamsMap,
                     OnGetListener onGetListener,
@@ -79,7 +81,7 @@ public class OcResource {
      * @param onGetListener     The event handler will be invoked with a map of attribute name and
      *                          values. The event handler will also have the result from this Get
      *                          operation This will have error codes
-     * @throws OcException
+     * @throws OcException if failure
      */
     public void get(String resourceType,
                     String resourceInterface,
@@ -107,7 +109,7 @@ public class OcResource {
      *                          values. The event handler will also have the result from this Get
      *                          operation This will have error codes
      * @param qualityOfService  the quality of communication
-     * @throws OcException
+     * @throws OcException if failure
      */
     public void get(String resourceType,
                     String resourceInterface,
@@ -135,7 +137,7 @@ public class OcResource {
      * @param queryParamsMap Map which can have the query parameter name and value
      * @param onPutListener  event handler The event handler will be invoked with a map of attribute
      *                       name and values.
-     * @throws OcException
+     * @throws OcException if failure
      */
     public native void put(OcRepresentation representation,
                            Map<String, String> queryParamsMap,
@@ -149,7 +151,7 @@ public class OcResource {
      * @param onPutListener    event handler The event handler will be invoked with a map of
      *                         attribute name and values.
      * @param qualityOfService the quality of communication
-     * @throws OcException
+     * @throws OcException if failure
      */
     public void put(OcRepresentation ocRepresentation,
                     Map<String, String> queryParamsMap,
@@ -176,7 +178,7 @@ public class OcResource {
      * @param queryParamsMap    Map which can have the query parameter name and value
      * @param onPutListener     event handler The event handler will be invoked with a map of
      *                          attribute name and values.
-     * @throws OcException
+     * @throws OcException if failure
      */
     public void put(String resourceType,
                     String resourceInterface,
@@ -207,7 +209,7 @@ public class OcResource {
      * @param onPutListener     event handler The event handler will be invoked with a map of
      *                          attribute name and values.
      * @param qualityOfService  the quality of communication
-     * @throws OcException
+     * @throws OcException if failure
      */
     public void put(String resourceType,
                     String resourceInterface,
@@ -238,7 +240,7 @@ public class OcResource {
      * @param queryParamsMap   Map which can have the query parameter name and value
      * @param onPostListener   event handler The event handler will be invoked with a map of
      *                         attribute name and values.
-     * @throws OcException
+     * @throws OcException if failure
      */
     public native void post(OcRepresentation ocRepresentation,
                             Map<String, String> queryParamsMap,
@@ -252,7 +254,7 @@ public class OcResource {
      * @param onPostListener   event handler The event handler will be invoked with a map of
      *                         attribute name and values.
      * @param qualityOfService the quality of communication
-     * @throws OcException
+     * @throws OcException if failure
      */
     public void post(OcRepresentation ocRepresentation,
                      Map<String, String> queryParamsMap,
@@ -279,7 +281,7 @@ public class OcResource {
      * @param queryParamsMap    Map which can have the query parameter name and value
      * @param onPostListener    event handler The event handler will be invoked with a map of
      *                          attribute name and values.
-     * @throws OcException
+     * @throws OcException if failure
      */
     public void post(String resourceType,
                      String resourceInterface,
@@ -460,10 +462,10 @@ public class OcResource {
     /**
      * Method to get the connectivity type of this resource
      *
-     * @return OcConnectivityType connectivity type
+     * @return EnumSet<OcConnectivityType></OcConnectivityType> connectivity type set
      */
-    public OcConnectivityType getConnectivityType() {
-        return OcConnectivityType.get(
+    public EnumSet<OcConnectivityType> getConnectivityTypeSet() {
+        return OcConnectivityType.convertToEnumSet(
                 this.getConnectivityTypeN()
         );
     }
@@ -501,7 +503,9 @@ public class OcResource {
 
     /**
      * Method to get a string representation of the resource's server ID.
-     * * This is unique per- server independent on how it was discovered.
+     * <p>
+     * This is unique per- server independent on how it was discovered.
+     * </p>
      *
      * @return server ID
      */
@@ -555,6 +559,19 @@ public class OcResource {
      * Event listeners are notified asynchronously
      */
     public interface OnObserveListener {
+        /**
+         * To Register.
+         */
+        public static final int REGISTER = 0;
+        /**
+         * To Deregister.
+         */
+        public static final int DEREGISTER = 1;
+        /**
+         * Others.
+         */
+        public static final int NO_OPTION = 2;
+
         public void onObserveCompleted(List<OcHeaderOption> headerOptionList,
                                        OcRepresentation ocRepresentation,
                                        int sequenceNumber);

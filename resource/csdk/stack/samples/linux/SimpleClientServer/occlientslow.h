@@ -44,6 +44,8 @@ typedef enum
     TEST_DISCOVER_REQ = 1,
     TEST_NON_CON_OP,
     TEST_CON_OP,
+    TEST_NON_CON_PUT,
+    TEST_CON_PUT,
     MAX_TESTS
 } CLIENT_TEST;
 
@@ -53,8 +55,7 @@ typedef enum
  */
 typedef enum {
     CT_ADAPTER_DEFAULT = 0,
-    CT_IPV4,
-    CT_IPV6,
+    CT_IP,
     MAX_CT
 } CLIENT_CONNECTIVITY_TYPE;
 
@@ -78,6 +79,7 @@ std::string getQueryStrForGetPut(OCClientResponse * clientResponse);
  * POST & Discovery operations
  */
 int InitGetRequest(OCQualityOfService qos);
+int InitPutRequest(OCQualityOfService qos);
 int InitDiscovery();
 
 /* Function to retrieve ip address, port no. of the server

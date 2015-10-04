@@ -29,7 +29,7 @@
 #include <array>
 #include "ocstack.h"
 #include "logger.h"
-#include "cJSON.h"
+#include "ocpayload.h"
 #include "ocserver.h"
 
 //string length of "/a/light/" + std::numeric_limits<int>::digits10 + '\0'"
@@ -50,21 +50,14 @@ static LightResource gLightInstance[SAMPLE_MAX_NUM_POST_INSTANCE];
 
 Observers interestedObservers[SAMPLE_MAX_NUM_OBSERVATIONS];
 
+pthread_t threadId_observe;
+pthread_t threadId_presence;
+
+static bool observeThreadStarted = false;
+
 #ifdef WITH_PRESENCE
-static int stopPresenceCount = 10;
 #define numPresenceResources (2)
 #endif
-
-//TODO: Follow the pattern used in constructJsonResponse() when the payload is decided.
-const char responsePayloadDeleteOk[] =
-        "{App determines payload: Delete Resource operation succeeded.}";
-const char responsePayloadDeleteNotOK[] =
-        "{App determines payload: Delete Resource operation failed.}";
-const char responsePayloadResourceDoesNotExist[] =
-        "{App determines payload: The resource does not exist.}";
-const char responsePayloadDeleteResourceNotSupported[] =
-        "{App determines payload: The request is received for a non-support resource.}";
-
 
 char *gResourceUri= (char *)"/a/light";
 const char *dateOfManufacture = "myDateOfManufacture";
@@ -90,13 +83,33 @@ const char *resourceInterface = OC_RSRVD_INTERFACE_DEFAULT;
 OCPlatformInfo platformInfo;
 OCDeviceInfo deviceInfo;
 
-//This function takes the request as an input and returns the response
-//in JSON format.
-char* constructJsonResponse (OCEntityHandlerRequest *ehRequest)
+OCRepPayload* getPayload(const char* uri, int64_t power, bool state)
 {
-    cJSON *json = cJSON_CreateObject();
-    cJSON *format;
-    char *jsonResponse;
+    OCRepPayload* payload = OCRepPayloadCreate();
+    if(!payload)
+    {
+        OC_LOG(ERROR, TAG, PCF("Failed to allocate Payload"));
+        return nullptr;
+    }
+
+    OCRepPayloadSetUri(payload, uri);
+    OCRepPayloadSetPropBool(payload, "state", state);
+    OCRepPayloadSetPropInt(payload, "power", power);
+
+    return payload;
+}
+
+//This function takes the request as an input and returns the response
+OCRepPayload* constructResponse(OCEntityHandlerRequest *ehRequest)
+{
+    if(ehRequest->payload && ehRequest->payload->type != PAYLOAD_TYPE_REPRESENTATION)
+    {
+        OC_LOG(ERROR, TAG, PCF("Incoming payload not a representation"));
+        return nullptr;
+    }
+
+    OCRepPayload* input = reinterpret_cast<OCRepPayload*>(ehRequest->payload);
+
     LightResource *currLightResource = &Light;
 
     if (ehRequest->resource == gLightInstance[0].handle)
@@ -112,51 +125,21 @@ char* constructJsonResponse (OCEntityHandlerRequest *ehRequest)
 
     if(OC_REST_PUT == ehRequest->method)
     {
-        // Get cJSON pointer to query
-        cJSON *putJson = cJSON_Parse(ehRequest->reqJSONPayload);
-
-        if(!putJson)
+        // Get pointer to query
+        int64_t pow;
+        if(OCRepPayloadGetPropInt(input, "power", &pow))
         {
-            OC_LOG_V(ERROR, TAG, "Failed to parse JSON: %s", ehRequest->reqJSONPayload);
-            return NULL;
+            currLightResource->power =pow;
         }
 
-        // Get root of JSON payload, then the 1st resource.
-        cJSON* carrier = cJSON_GetObjectItem(putJson, "oic");
-        if (carrier)
+        bool state;
+        if(OCRepPayloadGetPropBool(input, "state", &state))
         {
-            carrier = cJSON_GetArrayItem(carrier, 0);
-            carrier = cJSON_GetObjectItem(carrier, "rep");
-
-            cJSON* prop = cJSON_GetObjectItem(carrier,"power");
-            if (prop)
-            {
-                currLightResource->power =prop->valueint;
-            }
-
-            prop = cJSON_GetObjectItem(carrier,"state");
-            if (prop)
-            {
-                currLightResource->state = prop->valueint;
-            }
+            currLightResource->state = state;
         }
-        else
-        {
-            OC_LOG_V(WARNING, TAG, "Failed to find oic node");
-        }
-
-        cJSON_Delete(putJson);
     }
 
-    cJSON_AddStringToObject(json,"href",gResourceUri);
-    cJSON_AddItemToObject(json, "rep", format=cJSON_CreateObject());
-    cJSON_AddBoolToObject(format, "state", currLightResource->state);
-    cJSON_AddNumberToObject(format, "power", currLightResource->power);
-
-    jsonResponse = cJSON_Print(json);
-    cJSON_Delete(json);
-
-    return jsonResponse;
+    return getPayload(gResourceUri, currLightResource->power, currLightResource->state);
 }
 
 /*
@@ -200,7 +183,7 @@ OCEntityHandlerResult ValidateQueryParams (OCEntityHandlerRequest *entityHandler
 }
 
 OCEntityHandlerResult ProcessGetRequest (OCEntityHandlerRequest *ehRequest,
-        char *payload, uint16_t maxPayloadSize)
+        OCRepPayload **payload)
 {
     OCEntityHandlerResult ehResult;
     bool queryPassed = checkIfQueryForPowerPassed(ehRequest->query);
@@ -208,26 +191,15 @@ OCEntityHandlerResult ProcessGetRequest (OCEntityHandlerRequest *ehRequest,
     // Empty payload if the query has no match.
     if (queryPassed)
     {
-        char *getResp = constructJsonResponse(ehRequest);
+        OCRepPayload *getResp = constructResponse(ehRequest);
         if(!getResp)
         {
-            OC_LOG(ERROR, TAG, "constructJsonResponse failed");
+            OC_LOG(ERROR, TAG, "constructResponse failed");
             return OC_EH_ERROR;
         }
 
-        if (maxPayloadSize > strlen (getResp))
-        {
-            strncpy(payload, getResp, strlen(getResp));
-            ehResult = OC_EH_OK;
-        }
-        else
-        {
-            OC_LOG_V (INFO, TAG, "Response buffer: %d bytes is too small",
-                    maxPayloadSize);
-            ehResult = OC_EH_ERROR;
-        }
-
-        free(getResp);
+        *payload = getResp;
+        ehResult = OC_EH_OK;
     }
     else
     {
@@ -238,10 +210,10 @@ OCEntityHandlerResult ProcessGetRequest (OCEntityHandlerRequest *ehRequest,
 }
 
 OCEntityHandlerResult ProcessPutRequest (OCEntityHandlerRequest *ehRequest,
-        char *payload, uint16_t maxPayloadSize)
+        OCRepPayload** payload)
 {
     OCEntityHandlerResult ehResult;
-    char *putResp = constructJsonResponse(ehRequest);
+    OCRepPayload *putResp = constructResponse(ehRequest);
 
     if(!putResp)
     {
@@ -249,30 +221,17 @@ OCEntityHandlerResult ProcessPutRequest (OCEntityHandlerRequest *ehRequest,
         return OC_EH_ERROR;
     }
 
-    if (maxPayloadSize > strlen ((char *)putResp))
-    {
-        strncpy(payload, putResp, strlen((char *)putResp));
-        ehResult = OC_EH_OK;
-    }
-    else
-    {
-        OC_LOG_V (INFO, TAG, "Response buffer: %d bytes is too small",
-                maxPayloadSize);
-        ehResult = OC_EH_ERROR;
-    }
-
-    free(putResp);
+    *payload = putResp;
+    ehResult = OC_EH_OK;
 
     return ehResult;
 }
 
 OCEntityHandlerResult ProcessPostRequest (OCEntityHandlerRequest *ehRequest,
-        OCEntityHandlerResponse *response, char *payload, uint16_t maxPayloadSize)
+        OCEntityHandlerResponse *response, OCRepPayload** payload)
 {
     OCEntityHandlerResult ehResult = OC_EH_OK;
-    char *respPLPost_light = NULL;
-    cJSON *json;
-    cJSON *format;
+    OCRepPayload *respPLPost_light = nullptr;
 
     /*
      * The entity handler determines how to process a POST request.
@@ -293,10 +252,9 @@ OCEntityHandlerResult ProcessPostRequest (OCEntityHandlerRequest *ehRequest,
             char newLightUri[URI_MAXSIZE];
             snprintf(newLightUri, URI_MAXSIZE, "/a/light/%d", gCurrLightInstance);
 
-            json = cJSON_CreateObject();
-            cJSON_AddStringToObject(json,"href",gResourceUri);
-            cJSON_AddItemToObject(json, "rep", format=cJSON_CreateObject());
-            cJSON_AddStringToObject(format, "createduri", (char *) newLightUri);
+            respPLPost_light = OCRepPayloadCreate();
+            OCRepPayloadSetUri(respPLPost_light, gResourceUri);
+            OCRepPayloadSetPropString(respPLPost_light, "createduri", newLightUri);
 
             if (0 == createLightResource (newLightUri, &gLightInstance[gCurrLightInstance]))
             {
@@ -304,19 +262,16 @@ OCEntityHandlerResult ProcessPostRequest (OCEntityHandlerRequest *ehRequest,
                 gLightInstance[gCurrLightInstance].state = 0;
                 gLightInstance[gCurrLightInstance].power = 0;
                 gCurrLightInstance++;
-                respPLPost_light = cJSON_Print(json);
                 strncpy ((char *)response->resourceUri, newLightUri, MAX_URI_LENGTH);
                 ehResult = OC_EH_RESOURCE_CREATED;
             }
-
-            cJSON_Delete(json);
         }
         else
         {
             // Update repesentation of /a/light
             Light.state = true;
             Light.power = 11;
-            respPLPost_light = constructJsonResponse(ehRequest);
+            respPLPost_light = constructResponse(ehRequest);
         }
     }
     else
@@ -329,34 +284,31 @@ OCEntityHandlerResult ProcessPostRequest (OCEntityHandlerRequest *ehRequest,
                 gLightInstance[i].power = 22;
                 if (i == 0)
                 {
-                    respPLPost_light = constructJsonResponse(ehRequest);
+                    respPLPost_light = constructResponse(ehRequest);
                     break;
                 }
                 else if (i == 1)
                 {
-                    respPLPost_light = constructJsonResponse(ehRequest);
+                    respPLPost_light = constructResponse(ehRequest);
                 }
             }
         }
     }
 
-    if ((respPLPost_light != NULL) && (maxPayloadSize > strlen ((char *)respPLPost_light)))
+    if ((respPLPost_light != NULL))
     {
-        strncpy(payload, respPLPost_light, strlen((char *)respPLPost_light));
+        *payload = respPLPost_light;
     }
     else
     {
-        OC_LOG_V (INFO, TAG, "Response buffer: %d bytes is too small",
-                maxPayloadSize);
+        OC_LOG(INFO, TAG, "Payload was NULL");
         ehResult = OC_EH_ERROR;
     }
 
-    free(respPLPost_light);
     return ehResult;
 }
 
-OCEntityHandlerResult ProcessDeleteRequest (OCEntityHandlerRequest *ehRequest,
-        char *payload, uint16_t maxPayloadSize)
+OCEntityHandlerResult ProcessDeleteRequest (OCEntityHandlerRequest *ehRequest)
 {
     if(ehRequest == NULL)
     {
@@ -376,8 +328,6 @@ OCEntityHandlerResult ProcessDeleteRequest (OCEntityHandlerRequest *ehRequest,
      * 2. optionally, app removes observers out of its array 'interestedObservers'
      */
 
-    const char* deleteResponse = NULL;
-
     if ((ehRequest != NULL) && (ehRequest->resource == Light.handle))
     {
         //Step 1: Ask stack to do the work.
@@ -387,7 +337,6 @@ OCEntityHandlerResult ProcessDeleteRequest (OCEntityHandlerRequest *ehRequest,
         {
             OC_LOG (INFO, TAG, "\n\nDelete Resource operation succeeded.");
             ehResult = OC_EH_OK;
-            deleteResponse = responsePayloadDeleteOk;
 
             //Step 2: clear observers who wanted to observe this resource at the app level.
             for (uint8_t i = 0; i < SAMPLE_MAX_NUM_OBSERVATIONS; i++)
@@ -403,13 +352,11 @@ OCEntityHandlerResult ProcessDeleteRequest (OCEntityHandlerRequest *ehRequest,
         else if (result == OC_STACK_NO_RESOURCE)
         {
             OC_LOG(INFO, TAG, "\n\nThe resource doesn't exist or it might have been deleted.");
-            deleteResponse = responsePayloadResourceDoesNotExist;
             ehResult = OC_EH_RESOURCE_DELETED;
         }
         else
         {
             OC_LOG(INFO, TAG, "\n\nEncountered error from OCDeleteResource().");
-            deleteResponse = responsePayloadDeleteNotOK;
             ehResult = OC_EH_ERROR;
         }
     }
@@ -418,42 +365,15 @@ OCEntityHandlerResult ProcessDeleteRequest (OCEntityHandlerRequest *ehRequest,
         //Let's this app not supporting DELETE on some resources so
         //consider the DELETE request is received for a non-support resource.
         OC_LOG_V(INFO, TAG, "\n\nThe request is received for a non-support resource.");
-        deleteResponse = responsePayloadDeleteResourceNotSupported;
         ehResult = OC_EH_FORBIDDEN;
-    }
-
-    if (maxPayloadSize > strlen ((char *)deleteResponse))
-    {
-        strncpy(payload, deleteResponse, strlen((char *)deleteResponse));
-    }
-    else
-    {
-        OC_LOG_V (INFO, TAG, "Response buffer: %d bytes is too small",
-                maxPayloadSize);
-        ehResult = OC_EH_ERROR;
     }
 
     return ehResult;
 }
 
-OCEntityHandlerResult ProcessNonExistingResourceRequest(OCEntityHandlerRequest *ehRequest,
-        char *payload, uint16_t maxPayloadSize)
+OCEntityHandlerResult ProcessNonExistingResourceRequest(OCEntityHandlerRequest * /*ehRequest*/)
 {
     OC_LOG_V(INFO, TAG, "\n\nExecuting %s ", __func__);
-
-    const char* response = NULL;
-    response = responsePayloadResourceDoesNotExist;
-
-    if ( (ehRequest != NULL) &&
-         (maxPayloadSize > strlen ((char *)response)) )
-    {
-        strncpy((char *)payload, response, strlen((char *)response));
-    }
-    else
-    {
-        OC_LOG_V (ERROR, TAG, "Response buffer: %d bytes is too small",
-                maxPayloadSize);
-    }
 
     return OC_EH_RESOURCE_NOT_FOUND;
 }
@@ -462,6 +382,12 @@ void ProcessObserveRegister (OCEntityHandlerRequest *ehRequest)
 {
     OC_LOG_V (INFO, TAG, "Received observation registration request with observation Id %d",
             ehRequest->obsInfo.obsId);
+
+    if (!observeThreadStarted)
+    {
+        pthread_create (&threadId_observe, NULL, ChangeLightRepresentation, (void *)NULL);
+        observeThreadStarted = 1;
+    }
     for (uint8_t i = 0; i < SAMPLE_MAX_NUM_OBSERVATIONS; i++)
     {
         if (interestedObservers[i].valid == false)
@@ -498,13 +424,14 @@ void ProcessObserveDeregister (OCEntityHandlerRequest *ehRequest)
 
 OCEntityHandlerResult
 OCDeviceEntityHandlerCb (OCEntityHandlerFlag flag,
-        OCEntityHandlerRequest *entityHandlerRequest, char* uri, void* callbackParam)
+                         OCEntityHandlerRequest *entityHandlerRequest,
+                         char* uri,
+                         void* /*callbackParam*/)
 {
     OC_LOG_V (INFO, TAG, "Inside device default entity handler - flags: 0x%x, uri: %s", flag, uri);
 
     OCEntityHandlerResult ehResult = OC_EH_OK;
     OCEntityHandlerResponse response;
-    char payload[MAX_RESPONSE_LENGTH] = {0};
 
     // Validate pointer
     if (!entityHandlerRequest)
@@ -517,6 +444,7 @@ OCDeviceEntityHandlerCb (OCEntityHandlerFlag flag,
     memset(response.sendVendorSpecificHeaderOptions, 0,
             sizeof response.sendVendorSpecificHeaderOptions);
     memset(response.resourceUri, 0, sizeof response.resourceUri);
+    OCRepPayload* payload = nullptr;
 
 
     if (flag & OC_REQUEST_FLAG)
@@ -526,23 +454,22 @@ OCDeviceEntityHandlerCb (OCEntityHandlerFlag flag,
         if (entityHandlerRequest->resource == NULL)
         {
             OC_LOG (INFO, TAG, "Received request from client to a non-existing resource");
-            ehResult = ProcessNonExistingResourceRequest(entityHandlerRequest,
-                           payload, sizeof(payload) - 1);
+            ehResult = ProcessNonExistingResourceRequest(entityHandlerRequest);
         }
         else if (OC_REST_GET == entityHandlerRequest->method)
         {
             OC_LOG (INFO, TAG, "Received OC_REST_GET from client");
-            ehResult = ProcessGetRequest (entityHandlerRequest, payload, sizeof(payload) - 1);
+            ehResult = ProcessGetRequest (entityHandlerRequest, &payload);
         }
         else if (OC_REST_PUT == entityHandlerRequest->method)
         {
             OC_LOG (INFO, TAG, "Received OC_REST_PUT from client");
-            ehResult = ProcessPutRequest (entityHandlerRequest, payload, sizeof(payload) - 1);
+            ehResult = ProcessPutRequest (entityHandlerRequest, &payload);
         }
         else if (OC_REST_DELETE == entityHandlerRequest->method)
         {
             OC_LOG (INFO, TAG, "Received OC_REST_DELETE from client");
-            ehResult = ProcessDeleteRequest (entityHandlerRequest, payload, sizeof(payload) - 1);
+            ehResult = ProcessDeleteRequest (entityHandlerRequest);
         }
         else
         {
@@ -557,8 +484,7 @@ OCDeviceEntityHandlerCb (OCEntityHandlerFlag flag,
             response.requestHandle = entityHandlerRequest->requestHandle;
             response.resourceHandle = entityHandlerRequest->resource;
             response.ehResult = ehResult;
-            response.payload = payload;
-            response.payloadSize = strlen(payload);
+            response.payload = reinterpret_cast<OCPayload*>(payload);
             // Indicate that response is NOT in a persistent buffer
             response.persistentBufferFlag = 0;
 
@@ -587,8 +513,9 @@ OCDeviceEntityHandlerCb (OCEntityHandlerFlag flag,
 }
 
 OCEntityHandlerResult
-OCNOPEntityHandlerCb (OCEntityHandlerFlag flag,
-        OCEntityHandlerRequest *entityHandlerRequest, void* callbackParam)
+OCNOPEntityHandlerCb (OCEntityHandlerFlag /*flag*/,
+                      OCEntityHandlerRequest * /*entityHandlerRequest*/,
+                      void* /*callbackParam*/)
 {
     // This is callback is associated with the 2 presence notification
     // resources. They are non-operational.
@@ -597,13 +524,12 @@ OCNOPEntityHandlerCb (OCEntityHandlerFlag flag,
 
 OCEntityHandlerResult
 OCEntityHandlerCb (OCEntityHandlerFlag flag,
-        OCEntityHandlerRequest *entityHandlerRequest, void* callback)
+        OCEntityHandlerRequest *entityHandlerRequest, void* /*callback*/)
 {
     OC_LOG_V (INFO, TAG, "Inside entity handler - flags: 0x%x", flag);
 
     OCEntityHandlerResult ehResult = OC_EH_OK;
-    OCEntityHandlerResponse response;
-    char payload[MAX_RESPONSE_LENGTH] = {0};
+    OCEntityHandlerResponse response = { 0, 0, OC_EH_ERROR, 0, 0, { },{ 0 }, false };
 
     // Validate pointer
     if (!entityHandlerRequest)
@@ -617,6 +543,7 @@ OCEntityHandlerCb (OCEntityHandlerFlag flag,
     memset(response.sendVendorSpecificHeaderOptions,
             0, sizeof response.sendVendorSpecificHeaderOptions);
     memset(response.resourceUri, 0, sizeof response.resourceUri);
+    OCRepPayload* payload = nullptr;
 
     if (flag & OC_REQUEST_FLAG)
     {
@@ -625,22 +552,22 @@ OCEntityHandlerCb (OCEntityHandlerFlag flag,
         if (OC_REST_GET == entityHandlerRequest->method)
         {
             OC_LOG (INFO, TAG, "Received OC_REST_GET from client");
-            ehResult = ProcessGetRequest (entityHandlerRequest, payload, sizeof(payload) - 1);
+            ehResult = ProcessGetRequest (entityHandlerRequest, &payload);
         }
         else if (OC_REST_PUT == entityHandlerRequest->method)
         {
             OC_LOG (INFO, TAG, "Received OC_REST_PUT from client");
-            ehResult = ProcessPutRequest (entityHandlerRequest, payload, sizeof(payload) - 1);
+            ehResult = ProcessPutRequest (entityHandlerRequest, &payload);
         }
         else if (OC_REST_POST == entityHandlerRequest->method)
         {
             OC_LOG (INFO, TAG, "Received OC_REST_POST from client");
-            ehResult = ProcessPostRequest (entityHandlerRequest, &response, payload, sizeof(payload) - 1);
+            ehResult = ProcessPostRequest (entityHandlerRequest, &response, &payload);
         }
         else if (OC_REST_DELETE == entityHandlerRequest->method)
         {
             OC_LOG (INFO, TAG, "Received OC_REST_DELETE from client");
-            ehResult = ProcessDeleteRequest (entityHandlerRequest, payload, sizeof(payload) - 1);
+            ehResult = ProcessDeleteRequest (entityHandlerRequest);
         }
         else
         {
@@ -655,8 +582,7 @@ OCEntityHandlerCb (OCEntityHandlerFlag flag,
             response.requestHandle = entityHandlerRequest->requestHandle;
             response.resourceHandle = entityHandlerRequest->resource;
             response.ehResult = ehResult;
-            response.payload = payload;
-            response.payloadSize = strlen(payload);
+            response.payload = reinterpret_cast<OCPayload*>(payload);
             // Indicate that response is NOT in a persistent buffer
             response.persistentBufferFlag = 0;
 
@@ -717,6 +643,7 @@ OCEntityHandlerCb (OCEntityHandlerFlag flag,
         }
     }
 
+    OCPayloadDestroy(response.payload);
     return ehResult;
 }
 
@@ -758,18 +685,10 @@ void *ChangeLightRepresentation (void *param)
                     }
                 }
 
-                cJSON *json = cJSON_CreateObject();
-                cJSON *format;
-                cJSON_AddStringToObject(json,"href",gResourceUri);
-                cJSON_AddItemToObject(json, "rep", format=cJSON_CreateObject());
-                cJSON_AddBoolToObject(format, "state", Light.state);
-                cJSON_AddNumberToObject(format, "power", Light.power);
-
-                char * obsResp = cJSON_Print(json);
-                cJSON_Delete(json);
+                OCRepPayload* payload = getPayload(gResourceUri, Light.power, Light.state);
                 result = OCNotifyListOfObservers (Light.handle, obsNotify, j,
-                        obsResp, OC_NA_QOS);
-                free(obsResp);
+                        payload, OC_NA_QOS);
+                OCRepPayloadDestroy(payload);
             }
             else if (gObserveNotifyType == 0)
             {
@@ -787,17 +706,6 @@ void *ChangeLightRepresentation (void *param)
                 OC_LOG (ERROR, TAG, "Incorrect notification type selected");
             }
         }
-#ifdef WITH_PRESENCE
-        if(stopPresenceCount > 0)
-        {
-            OC_LOG_V(INFO, TAG, "================  Counting down to stop presence %d", stopPresenceCount);
-        }
-        if(!stopPresenceCount--)
-        {
-            OC_LOG(INFO, TAG, "================ stopping presence");
-            OCStopPresence();
-        }
-#endif
     }
     return NULL;
 }
@@ -805,7 +713,9 @@ void *ChangeLightRepresentation (void *param)
 #ifdef WITH_PRESENCE
 void *presenceNotificationGenerator(void *param)
 {
-    sleep(10);
+    uint8_t secondsBeforePresence = 10;
+    OC_LOG_V(INFO, TAG, "Will send out presence in %u seconds", secondsBeforePresence);
+    sleep(secondsBeforePresence);
     (void)param;
     OCDoHandle presenceNotificationHandles[numPresenceResources];
     OCStackResult res = OC_STACK_OK;
@@ -856,6 +766,10 @@ void *presenceNotificationGenerator(void *param)
         OC_LOG_V(INFO, TAG, PCF("Deleted %s for presence notification"),
                                 presenceNotificationUris[i].c_str());
     }
+
+    OC_LOG(INFO, TAG, "================ stopping presence");
+    OCStopPresence();
+
     return NULL;
 }
 #endif
@@ -1019,19 +933,64 @@ static void PrintUsage()
     OC_LOG(INFO, TAG, "-o 1 : Notify list of observers");
 }
 
+#ifdef RA_ADAPTER
+static void jidbound(char *jid)
+{
+    OC_LOG_V(INFO, TAG, "\n\n    Bound JID: %s\n\n", jid);
+}
+#endif
+
 int main(int argc, char* argv[])
 {
-    pthread_t threadId;
-    pthread_t threadId_presence;
-    int opt;
 
-    while ((opt = getopt(argc, argv, "o:")) != -1)
+#ifdef RA_ADAPTER
+    char host[] = "localhost";
+    char user[] = "test1";
+    char pass[] = "intel123";
+    char empstr[] = "";
+    OCRAInfo_t rainfo = {};
+
+    rainfo.hostname = host;
+    rainfo.port = 5222;
+    rainfo.xmpp_domain = host;
+    rainfo.username = user;
+    rainfo.password = pass;
+    rainfo.resource = empstr;
+    rainfo.user_jid = empstr;
+    rainfo.jidbound = jidbound;
+#endif
+
+    int opt = 0;
+    while ((opt = getopt(argc, argv, "o:s:p:d:u:w:r:j:")) != -1)
     {
         switch(opt)
         {
             case 'o':
                 gObserveNotifyType = atoi(optarg);
                 break;
+#ifdef RA_ADAPTER
+            case 's':
+                rainfo.hostname = optarg;
+                break;
+            case 'p':
+                rainfo.port = atoi(optarg);
+                break;
+            case 'd':
+                rainfo.xmpp_domain = optarg;
+                break;
+            case 'u':
+                rainfo.username = optarg;
+                break;
+            case 'w':
+                rainfo.password = optarg;
+                break;
+            case 'j':
+                rainfo.user_jid = optarg;
+                break;
+            case 'r':
+                rainfo.resource = optarg;
+                break;
+#endif
             default:
                 PrintUsage();
                 return -1;
@@ -1043,6 +1002,10 @@ int main(int argc, char* argv[])
         PrintUsage();
         return -1;
     }
+
+#ifdef RA_ADAPTER
+    OCSetRAInfo(&rainfo);
+#endif
 
     OC_LOG(DEBUG, TAG, "OCServer is starting...");
 
@@ -1107,10 +1070,6 @@ int main(int argc, char* argv[])
         interestedObservers[i].valid = false;
     }
 
-    /*
-     * Create a thread for changing the representation of the Light
-     */
-    pthread_create (&threadId, NULL, ChangeLightRepresentation, (void *)NULL);
 
     /*
      * Create a thread for generating changes that cause presence notifications
@@ -1136,15 +1095,14 @@ int main(int argc, char* argv[])
             OC_LOG(ERROR, TAG, "OCStack process error");
             return 0;
         }
-
-        sleep(2);
     }
 
-    /*
-     * Cancel the Light thread and wait for it to terminate
-     */
-    pthread_cancel(threadId);
-    pthread_join(threadId, NULL);
+    if (observeThreadStarted)
+    {
+        pthread_cancel(threadId_observe);
+        pthread_join(threadId_observe, NULL);
+    }
+
     pthread_cancel(threadId_presence);
     pthread_join(threadId_presence, NULL);
 
